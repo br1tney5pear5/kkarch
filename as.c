@@ -67,7 +67,7 @@ char *strtab_find(const char *str, troll16_size_t len)
 char *strtab_alloc(const char *str, troll16_size_t len)
 {
   if(!strtab_arena)
-    strtab_arena = new_arena(5);
+    strtab_arena = new_arena(ARENA_SIZE);
 
   char *buf = arena_alloc(strtab_arena, len + 1);
   assert(buf);
@@ -113,6 +113,10 @@ struct troll16_sym *sym_alloc(
 
   sym->name = arena_offsetof(strtab_arena, strtab_alloc(str, len));
   sym->value = value;
+
+  printf("sym_alloc str='%.*s' name=%d value=%d\n", 
+      len, str, sym->name, sym->value);
+
 
   return sym;
 }
@@ -440,6 +444,8 @@ void reloc(struct troll16_sym *sym, troll16_addr_t offset, troll_u8_t type)
   assert(sym);
   reloca->sym = sym->name;
   
+  printf(YELLOW "reloc %04x %s\n" RESET, 
+      reloca->offset, troll_reloca_type_cstr(type));
   reloca_arena_cnt++;
 #if 0  
   reloc->sym = sym;
@@ -502,7 +508,8 @@ void write_reloc(int fd)
 u16 deref(struct arg *arg, u16 offset)
 {
   if(arg->type == ARG_LABEL || arg->type == ARG_AT_LABEL) {
-    printf("=== DEREF %p\n", arg->sym);
+    const char *symname = strtab_arena->data + arg->sym->name;
+    printf(YELLOW "=== DEREF %s\n" RESET, symname);
     
     //assert(arg->sym);
     reloc(arg->sym, offset, arg->reftype);
@@ -510,10 +517,13 @@ u16 deref(struct arg *arg, u16 offset)
 
   switch(arg->reftype) {
     case REF_FULL:
+      printf(YELLOW "  REF_FULL %04x\n" RESET, arg->value);
       return arg->value;
     case REF_LOWER:
+      printf(YELLOW "  REF_LOWER %04x\n" RESET, arg->value & 0xFF);
       return arg->value & 0xFF;
     case REF_UPPER:
+      printf(YELLOW "  REF_UPPER %04x\n" RESET, (arg->value >> 8) & 0xFF);
       return (arg->value >> 8) & 0xFF;
     default:
       fail("Busted");
@@ -550,6 +560,7 @@ int advance(char **buf, int *len, int inc)
 /* space must be skipped beforehand */
 int getreg(struct arg *arg, char *buf, int len) 
 { 
+  //printf("%.*s\n", len, buf);
   int toklen = 0;
   while(len && isalnum(buf[toklen])) {
     toklen++; len--;
@@ -562,6 +573,8 @@ int getreg(struct arg *arg, char *buf, int len)
       arg->value = LR; goto out;
     } else if(buf[0] == 'p' && buf[1] == 'c') {
       arg->value = PC; goto out;
+    } else if(buf[0] == 'z' && buf[1] == 'r') {
+      arg->value = ZR; goto out;
     } else if(buf[0] == 'r') {
       if(!isdigit(buf[1]))
         goto fail;
@@ -879,6 +892,7 @@ int getarg(struct arg *arg, char **buf, int *len)
 #endif
 
 #if 1
+  /* TODO: merge with getreg */
   do { /* register */
     tok = *buf;
     toklen = *len;
@@ -894,6 +908,8 @@ int getarg(struct arg *arg, char **buf, int *len)
         arg->value = LR;
       } else if(tok[0] == 'p' && tok[1] == 'c' && (flags |= 0x2)) {
         arg->value = PC;
+      } else if(tok[0] == 'z' && tok[1] == 'r' && (flags |= 0x2)) {
+        arg->value = ZR;
       } else if(tok[0] == 'r') {
         if(!isdigit(tok[1]))
           break;
@@ -1049,6 +1065,7 @@ void actually_emit(
     struct inst_desc *desc, struct arg *a, struct arg *b, struct arg *c)
 {
   struct inst inst = {};
+  //printf("actually emit %s\n", desc->opcode);
   inst.op = desc->op;
   if(a && desc->type & INST_A) {
     inst.ra = a->value;
@@ -1089,24 +1106,6 @@ void do_emit_inst(
   if(desc->op < NUM_OP) {
     /* normal opcode */
     emit_cb(desc, a, b, c);
-
-    //switch(desc->op) {
-    //  default:
-    //    if(a && desc->type & INST_A) {
-    //      inst.ra = a->value;
-    //      if(b) {
-    //        if(desc->type & INST_B) {
-    //          inst.rb = b->value;
-    //          if(c && (desc->type & INST_C || desc->type & INST_IMM)) {
-    //            inst.rc = c->value;
-    //          }
-    //        } else if (desc->type & INST_IMM) {
-    //          inst.imm = deref(b, offset);
-    //        }
-    //      }
-    //    }
-    //    emit(inst);
-    //}
   } else {
     switch(desc->op) {
     case AOP_SW:
@@ -1561,82 +1560,6 @@ int main(int argc, char **argv)
     ok(argv[optind]);
   }
 
-  //char **positionals = &argv[optind];
-  //for(; *positionals; positionals++) {
-  //  ok(*positionals);
-  //  //fprintf(stdout, "positional: %s\n", *positionals);
-  //}
-
-  //return 0;
-#if 0 
-
-  //for(; optind < argc; ++optind) {
-  //  if(open_object(argv[optind]))
-  //    fail("Failed to open the object file '%s'", argv[optind]);
-  //}
-  //const char *l = "label";
-  //for(int i = 0; i < 10; ++i) {
-  //  const char *lkp = label(l, strlen(l));
-  //  printf("%p\n", lkp);
-  //  l = "ok";
-  //}
-  //return 0;
-  printf("sizeof(struct inst)=%zu\n", sizeof(struct inst));
-
-  inst_arena = new_arena(ARENA_SIZE);
-
-  const char *file = "test2.S";
-
-  int fd = open(file, O_RDONLY);
-  if(fd < 0) {
-    fprintf(stderr, "Fail\n");
-    return -1;
-  }
-  //output_fd = open("image", O_WRONLY | O_CREAT | O_TRUNC);
-  //if(fd < 0) {
-  //  fprintf(stderr, "Fail\n");
-  //  return -1;
-  //}
-
-  for(int i = 0; i < NUM_R; ++i) {
-    rarg[i].type = ARG_REG;
-    rarg[i].value = i;
-  }
-
-  int i = 0;
-  int sz;
-  char *line;
-
-  while((sz = read(fd, filebuf + i, FBUF_SZ - i) + i)) {
-    line = filebuf;
-    while(1) {
-      for(; i < sz; ++i) {
-        if(filebuf[i] == '\n')
-          break;
-
-        if(!isprint(filebuf[i]))
-          fail("Nonprintable character");
-      }
-
-      if(i < sz) {
-        assert(filebuf[i] == '\n');
-        i += 1;
-        parse_line3(line, i - (line - filebuf));
-        line = filebuf + i;
-        continue;
-      }
-
-      // TODO: Thie check should be more general
-      i = sz - (line - filebuf);
-      if(i > (FBUF_SZ >> 1)) 
-        fail("Line too long!\n");
-
-      memmove(filebuf, line, i);
-      break;
-    }
-  }
-#endif
-
   struct troll_header troll_header = {
     .id[TROLL_ID_MAG0] = TROLL_MAG0,
     .id[TROLL_ID_MAG1] = TROLL_MAG1,
@@ -1658,30 +1581,37 @@ int main(int argc, char **argv)
   write(output_fd, &troll_header, sizeof(struct troll_header));
 
   struct troll_shdr troll_section = {};
-  troll_section.type = TROLL_SYMTAB;
-  troll_section.size = arena_size(symtab_arena) + sizeof(struct troll_shdr);
-  printf("SYMTAB 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
-  write(output_fd, &troll_section, sizeof(struct troll_shdr));
-  arena_write(symtab_arena, output_fd);
+  if(symtab_arena) {
+    troll_section.type = TROLL_SYMTAB;
+    troll_section.size = arena_size(symtab_arena) + sizeof(struct troll_shdr);
+    printf("SYMTAB 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
+    write(output_fd, &troll_section, sizeof(struct troll_shdr));
+    arena_write(symtab_arena, output_fd);
+  }
 
-  troll_section.type = TROLL_STRTAB;
-  troll_section.size = arena_size(strtab_arena) + sizeof(struct troll_shdr);
-  printf("STRTAB 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
-  write(output_fd, &troll_section, sizeof(struct troll_shdr));
-  arena_write(strtab_arena, output_fd);
+  if(strtab_arena) {
+    troll_section.type = TROLL_STRTAB;
+    troll_section.size = arena_size(strtab_arena) + sizeof(struct troll_shdr);
+    printf("STRTAB 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
+    write(output_fd, &troll_section, sizeof(struct troll_shdr));
+    arena_write(strtab_arena, output_fd);
+  }
 
-  troll_section.type = TROLL_RELOC;
-  troll_section.size =  arena_size(reloca_arena)+ sizeof(struct troll_shdr);
-  printf("RELOC 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
-  write(output_fd, &troll_section, sizeof(struct troll_shdr));
-  arena_write(reloca_arena, output_fd);
+  if(reloca_arena) {
+    troll_section.type = TROLL_RELOC;
+    troll_section.size = arena_size(reloca_arena)+ sizeof(struct troll_shdr);
+    printf("RELOC 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
+    write(output_fd, &troll_section, sizeof(struct troll_shdr));
+    arena_write(reloca_arena, output_fd);
+  }
 
-  troll_section.type = TROLL_CODE;
-  troll_section.size = arena_size(inst_arena) + sizeof(struct troll_shdr);
-  printf("CODE 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
-  write(output_fd, &troll_section, sizeof(struct troll_shdr));
-  arena_write(inst_arena, output_fd);
-  
+  if(inst_arena) {
+    troll_section.type = TROLL_CODE;
+    troll_section.size = arena_size(inst_arena) + sizeof(struct troll_shdr);
+    printf("CODE 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
+    write(output_fd, &troll_section, sizeof(struct troll_shdr));
+    arena_write(inst_arena, output_fd);
+  }
 #if 0 
   for(int i = 0; i < labelidx; ++i) {
     printf("%04x %s = %04x\n", labels[i].addr, labels[i].name, labels[i].value);

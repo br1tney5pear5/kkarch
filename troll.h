@@ -75,12 +75,8 @@ struct troll_shdr {
   u8 data[];
 } __TROLL_PACKED;
 
-//
-//enum {
-//  TROLL_RELOC_F_UNDEFINED,
-//  TROLL_RELOC_F_UNDEFINED,
-//};
-//
+
+
 struct troll_reloc {
   int symoff;
   int offset;

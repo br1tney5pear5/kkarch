@@ -79,8 +79,10 @@ void arena_write(struct arena *arena, int fd) {
 u16 arena_size(struct arena *arena)
 {
   u16 size = 0;
-  for(; arena; arena = arena->next)
+  for(; arena; arena = arena->next) {
+    printf("arena=%p\n", arena);
     size += arena->off;
+  }
   return size;
 }
 

@@ -11,6 +11,7 @@ int global_offset = 0;
 
 int output_fd = -1;
 
+
 struct object {
   struct object *next;
 
@@ -26,6 +27,7 @@ struct object {
   
   int offset;
 };
+struct object *objects = NULL;
 
 struct symbol {
   struct symbol *next;
@@ -34,9 +36,14 @@ struct symbol {
 };
 
 
+//int open_object(const char *filename)
+//{
+//}
+//
 
 int open_object(const char *filename) 
 {
+  printf(RED "open_object %s\n" RESET, filename);
   static struct object *prev = NULL;
   if(!arena)
     arena = new_arena(1024);
@@ -46,7 +53,11 @@ int open_object(const char *filename)
     return -1;
 
   struct object *obj = arena_alloc(arena, sizeof(struct object));
+  if(!objects)
+    objects = obj;
+
   memset(obj, 0, sizeof(*obj));
+  obj->filename = filename; /* FIXME */
   obj->filesize = lseek(fd, 0, SEEK_END);
   obj->filebuf = arena_alloc(arena, obj->filesize);
   lseek(fd, 0, SEEK_SET);
@@ -132,6 +143,100 @@ int open_object(const char *filename)
     }
   } while(0);
 
+
+#if 0
+  for(int i = 0; 
+      i < (obj->reloca_sect->size - sizeof(struct troll_shdr))
+      /sizeof(struct troll_reloc);
+      ++i)
+  {
+    struct troll_reloc *reloc = 
+      ((struct troll_reloc *)obj->reloca_sect->data) + i;
+
+    const char *reftype_str = "???";
+
+    switch(reloc->reftype) {
+      case REF_FULL:  reftype_str = "full"; break;
+      case REF_LOWER: reftype_str = "lower"; break;
+      case REF_UPPER: reftype_str = "upper"; break;
+    }
+
+    printf("%s addr=%04x val=%04x %s\n", 
+        obj->symtab_sect->data + reloc->symoff, 
+        reloc->offset, 0,
+        reftype_str);
+  }
+#endif
+
+  //write(output_fd, obj->code_sect->data, obj->code_sect->size);
+
+  //hexdump("code:", obj->code_sect->data, obj->code_sect->size, 16);
+  return 0;
+}
+
+#define SECTION_DATA_END(SECT)\
+    (void*)((SECT)->data + ((SECT)->size - sizeof(*SECT))); 
+
+struct troll16_sym *find_sym(const char *symname, struct object **symobj) 
+{
+  for(struct object *obj = objects; obj; obj = obj->next) {
+    struct troll16_sym *sym = (void*)obj->symtab_sect->data;
+    struct troll16_sym *sym_end = SECTION_DATA_END(obj->symtab_sect);
+
+    while(sym < sym_end) {
+      assert(sym->name < obj->strtab_sect->size);
+      const char *lkp_symname = (void*)(obj->strtab_sect->data + sym->name);
+      if((sym->flags & TROLL_SYM_F_DEFINED) && !strcmp(symname, lkp_symname)) {
+        printf("found sym %s in %s name=%d size=%d\n", 
+             lkp_symname, obj->filename, sym->name, obj->strtab_sect->size);
+        *symobj = obj;
+        return sym;
+      }
+      sym++;
+    }
+  }
+  return NULL;
+}
+
+int dolink(void)
+{
+  for(struct object *obj = objects; obj; obj = obj->next) {
+    struct troll16_reloca *reloca = (void*)obj->reloca_sect->data;
+    struct troll16_reloca *reloca_end = SECTION_DATA_END(obj->reloca_sect);
+    while(reloca < reloca_end) {
+      const char *symname = obj->strtab_sect->data + reloca->sym;
+      printf("reloca %s\n", symname);
+      struct object *symobj = NULL;
+      struct troll16_sym *sym = find_sym(symname, &symobj);
+      printf("  got %p\n", sym);
+      assert(sym);
+
+      uint8_t *code = (void*)obj->code_sect->data; 
+      uint16_t value = sym->value + symobj->offset;
+      assert(value >= sym->value); /* overflow */
+      printf(GREEN "%s: Reloc %s at %08x to %04x\n" RESET, 
+          obj->filename, troll_reloca_type_cstr(reloca->type),
+          reloca->offset, value);
+
+      switch(reloca->type) {
+        case TROLL_RELOCA_T_GENERIC_HI8:
+          printf(GREEN "reloca %s offset %d = %02x\n" RESET, 
+              symname, reloca->offset, (uint8_t)((value & 0xff00) >> 16));
+          code[reloca->offset] = (uint8_t)((value & 0xff00) >> 16);
+          break;
+        case TROLL_RELOCA_T_GENERIC_LO8:
+          printf(GREEN "reloca %s offset %d = %02x\n" RESET, 
+              symname, reloca->offset, (uint8_t)(uint8_t)(value & 0x00ff));
+          code[reloca->offset] = (uint8_t)(value & 0x00ff);
+          break;
+        default:
+          fail("not handled");
+      }
+
+      reloca++;
+    }
+  }
+#if 0
   while(reloca < reloca_end) {
     ///char *name = arena_at(strtab_arena, lkp->name);
     ///int lkp_len = strlen(name);
@@ -163,7 +268,7 @@ int open_object(const char *filename)
       }
 
       if(sym == sym_end)
-        fail("No symtab entry for that symbol");
+        fail("no symtab entry for that symbol");
 
       printf("sym = %p, %04x\n", sym, sym->value);
 
@@ -171,16 +276,6 @@ int open_object(const char *filename)
 
       hexdump("before:", code + reloca->offset - 1, 4, 16);
 
-      switch(reloca->type) {
-        case TROLL_RELOCA_T_GENERIC_HI8:
-          code[reloca->offset] = (uint8_t)((sym->value & 0xFF00) >> 16);
-          break;
-        case TROLL_RELOCA_T_GENERIC_LO8:
-          code[reloca->offset] = (uint8_t)(sym->value & 0x00FF);
-          break;
-        default:
-          fail("NOT HANDLED");
-      }
 
       hexdump("after:", code + reloca->offset - 1, 4, 16);
     } else {
@@ -189,34 +284,7 @@ int open_object(const char *filename)
 
     reloca++;
   }
-#if 0
-  for(int i = 0; 
-      i < (obj->reloca_sect->size - sizeof(struct troll_shdr))
-      /sizeof(struct troll_reloc);
-      ++i)
-  {
-    struct troll_reloc *reloc = 
-      ((struct troll_reloc *)obj->reloca_sect->data) + i;
-
-    const char *reftype_str = "???";
-
-    switch(reloc->reftype) {
-      case REF_FULL:  reftype_str = "full"; break;
-      case REF_LOWER: reftype_str = "lower"; break;
-      case REF_UPPER: reftype_str = "upper"; break;
-    }
-
-    printf("%s addr=%04x val=%04x %s\n", 
-        obj->symtab_sect->data + reloc->symoff, 
-        reloc->offset, 0,
-        reftype_str);
-  }
 #endif
-
-  write(output_fd, obj->code_sect->data, obj->code_sect->size);
-
-  //hexdump("code:", obj->code_sect->data, obj->code_sect->size, 16);
-  return 0;
 }
 
 
@@ -244,6 +312,12 @@ int main(int argc, char **argv)
     if(rc)
       fail("Failed to open the object file '%s' %d", argv[optind], rc);
   }
+  dolink();
+
+  for(struct object *obj = objects; obj; obj = obj->next) {
+    write(output_fd, obj->code_sect->data, obj->code_sect->size);
+  }
+
   close(output_fd);
 
   return 0;

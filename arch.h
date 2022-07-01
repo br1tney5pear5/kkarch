@@ -12,7 +12,7 @@
 //Regular text
 #define BLK "\e[0;30m"
 #define RED "\e[0;31m"
-#define GRN "\e[0;32m"
+#define GREEN "\e[0;32m"
 #define YELLOW "\e[0;33m"
 #define BLU "\e[0;34m"
 #define MAG "\e[0;35m"
@@ -59,6 +59,7 @@ typedef uint8_t u8;
 // RRI
 
 #define INSTRUCTIONS_XMACRO \
+  X( "_halt" , OP_HALT,   0           )\
   X( "_lw",    OP_LW,     INST_AB_IMM )\
   X( "_sw",    OP_SW,     INST_AB_IMM )\
   X( "_add",   OP_ADD,    INST_ABC    )\
@@ -67,7 +68,6 @@ typedef uint8_t u8;
   X( "_sri",   OP_SRI,    INST_AB_IMM  )\
   X( "_xor" ,  OP_NAND,   INST_ABC    )\
   X( "_beq" ,  OP_BEQ,    INST_ABC    )\
-  X( "_halt" , OP_HALT,   0           )\
 
 #define ALIAS_INSTRUCTIONS_XMACRO\
   X( "add",    AOP_ADD,    INST_ABC    )\
