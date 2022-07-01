@@ -242,11 +242,13 @@ int main(int argc, char **argv)
       write_reg(inst.ra, ~(regfile[inst.rb] & regfile[inst.rc]));
       break;
     case OP_SW:
-      store(regfile[inst.ra], regfile[inst.rb] + inst.rc);
+      /* FIXME: rc ignored */
+      store(regfile[inst.rb], regfile[inst.ra]);
       if(inst.rb == SP && em_trace) printio(inst.rb);
       break;
     case OP_LW:
-      write_reg(inst.ra, load(regfile[inst.rb] + inst.rc));
+      /* FIXME: rc ignored */
+      write_reg(inst.ra, load(regfile[inst.rb]));
       if(inst.rb == SP && em_trace) printio(inst.rb);
       //printio(inst.rb);
       break;

@@ -100,6 +100,37 @@ int open_object(const char *filename)
   struct troll16_reloca *reloca = (void*)obj->reloca_sect->data;
   struct troll16_reloca *reloca_end = 
     (void*)(obj->reloca_sect->data + obj->reloca_sect->size);
+  do {
+    struct troll16_reloca *reloca = (void*)obj->reloca_sect->data;
+    struct troll16_reloca *reloca_end = 
+      (void*)(obj->reloca_sect->data + obj->reloca_sect->size);
+    while(reloca < reloca_end) {
+      if(reloca->sym < obj->symtab_sect->size) {
+
+        struct troll16_sym *sym = (void*)obj->symtab_sect->data;
+        struct troll16_sym *sym_end = 
+          (void*)(obj->symtab_sect->data + obj->symtab_sect->size); 
+
+        while(sym < sym_end) {
+          if(sym->name == reloca->sym)
+            break;
+          sym++;
+        }
+        if(sym == sym_end)
+          fail("No symtab entry for that symbol");
+
+        printf(YELLOW "reloca %s %s %08x\n" RESET, 
+          obj->strtab_sect->data + reloca->sym, 
+          troll_reloca_type_cstr(reloca->type), 
+          sym->value);
+
+      } else {
+        printf("WTF");
+        //assert(0);
+      }
+      reloca++;
+    }
+  } while(0);
 
   while(reloca < reloca_end) {
     ///char *name = arena_at(strtab_arena, lkp->name);
@@ -111,13 +142,13 @@ int open_object(const char *filename)
     //
     hexdump("reloca", reloca, sizeof(*reloca), 16);
 
-    //printf("reloca->sym = %zu\n", reloca->sym);
-    //printf("reloca->addr = %zu\n", reloca->offset);
-    //printf("reloca->addr = %zu\n", reloca->addend);
+    printf("reloca->sym = %zu\n", reloca->sym);
+    printf("reloca->addr = %zu\n", reloca->offset);
+    printf("reloca->addr = %zu\n", reloca->addend);
 
     if(reloca->sym < obj->strtab_sect->size) {
       printf("reloca->sym = %zu\n", reloca->sym);
-      printf("RELOCATING %s %s\n", 
+      printf(YELLOW "RELOCATING %s %s\n" RESET, 
           obj->strtab_sect->data + reloca->sym, 
           troll_reloca_type_cstr(reloca->type) );
 
@@ -152,6 +183,8 @@ int open_object(const char *filename)
       }
 
       hexdump("after:", code + reloca->offset - 1, 4, 16);
+    } else {
+      assert(0);
     }
 
     reloca++;

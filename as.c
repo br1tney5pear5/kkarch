@@ -1206,10 +1206,10 @@ void do_emit_inst(
      case AOP_SUB: /* for now this is our subtraction */
       assert(a && a->type == ARG_REG);
       assert(b && b->type == ARG_REG);
-      assert(c && c->type == ARG_REG);
+      assert(c);
 
       EMIT_INST(OP_NAND, a, a, a);
-      EMIT_INST(OP_ADD,  a, b, c);
+      EMIT_INST(AOP_ADD,  a, b, c);
       EMIT_INST(OP_NAND, a, a, a);
       break;
     case AOP_SUBI: /* for now this is our subtraction */
@@ -1226,9 +1226,10 @@ void do_emit_inst(
         EMIT_INST(OP_SW, a, &rarg[SP]);
         arg.type = ARG_IMM;
         arg.value = 2;
-        EMIT_INST(OP_ADD, &rarg[SP], &rarg[SP], &arg);
+        EMIT_INST(AOP_ADD, &rarg[SP], &rarg[SP], &arg);
         break;
       case ARG_REGLIST:
+        /* Can be optimised */
         arg.type = ARG_REG;
         for(int i = 0; i < a->reglist_len; ++i) {
           arg.value = a->reglist[i];
@@ -1244,7 +1245,7 @@ void do_emit_inst(
       case ARG_REG:
         arg.type = ARG_IMM;
         arg.value = 2;
-        EMIT_INST(AOP_SUBI, &rarg[SP], &arg);
+        EMIT_INST(AOP_SUB, &rarg[SP], &rarg[SP], &arg);
         EMIT_INST(OP_LW, a, &rarg[SP]);
         break;
       case ARG_REGLIST:
