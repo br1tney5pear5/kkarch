@@ -29,10 +29,21 @@ enum {
 };
 
 #define ZR R0
+#define ILR R7
+
+#define FR R11
 #define SP R12
 #define LR R13
 #define PC R14
 #define XR R15 
+
+/* Alternative mode registers */
+#define START 0x100
+
+#define ZF (1 << 0) /* Zero flag */
+#define IF (1 << 1) /* Interrupt enable */
+#define TF (1 << 2) /* Trap flag */
+#define RF (1 << 3) /* Alternative register bank */
 
 typedef uint16_t u16;
 typedef uint8_t u8;
@@ -59,14 +70,18 @@ typedef uint8_t u8;
 
 #define INSTRUCTIONS_XMACRO \
   X( "_halt" , OP_HALT,   0           )\
-  X( "_lw",    OP_LW,     INST_AB_IMM )\
-  X( "_sw",    OP_SW,     INST_AB_IMM )\
+  X( "_lw",    OP_LW,     INST_ABC    )\
+  X( "_sw",    OP_SW,     INST_ABC    )\
   X( "_add",   OP_ADD,    INST_ABC    )\
+  X( "_sub",   OP_SUB,    INST_ABC    )\
   X( "_ori",   OP_ORI,    INST_A_IMM  )\
+  X( "_xori",  OP_XORI,   INST_A_IMM  )\
   X( "_sli",   OP_SLI,    INST_AB_IMM  )\
   X( "_sri",   OP_SRI,    INST_AB_IMM  )\
   X( "_xor" ,  OP_NAND,   INST_ABC    )\
   X( "_beq" ,  OP_BEQ,    INST_ABC    )\
+  X( "_b"   ,  OP_B,      INST_A_IMM  )\
+  X( "_freg",  OP_FREG,   INST_AB  )\
 
 #define ALIAS_INSTRUCTIONS_XMACRO\
   X( "add",    AOP_ADD,    INST_ABC    )\
@@ -89,6 +104,7 @@ typedef uint8_t u8;
   X( "b",      AOP_B,    INST_A        )\
   X( "sb",     AOP_SB,   INST_AB_IMM   )\
   X( "lb",     AOP_LB,   INST_AB_IMM   )\
+  X( "cmp",    AOP_CMP,  INST_AB       )\
 
 #define DATA_INSTRUCTIONS_XMACRO\
   X( ".dw",   DOP_DW,   INST_DATA  )\
@@ -153,6 +169,7 @@ void _print_reg(FILE *out, u8 r) {
     case PC: fprintf(out, "pc"); break;
     case LR: fprintf(out, "lr"); break;
     case XR: fprintf(out, "xr"); break;
+    case FR: fprintf(out, "fr"); break;
     default: fprintf(out, "r%u", r); break;
   }
 }
@@ -163,7 +180,7 @@ const char *regname_cstr(u8 r)
   static const char *names[] = {
     "zr", "r1", "r2", "r3",
     "r4", "r5", "r6", "r7",
-    "r8", "r9", "r10", "r11",
+    "r8", "r9", "r10", "fr",
     "sp", "lr", "pc", "xr",
   };
   return names[r];

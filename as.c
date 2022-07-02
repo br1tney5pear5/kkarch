@@ -128,7 +128,7 @@ struct troll16_sym *sym_get(char *str, troll16_size_t len)
   if(!ret)
     ret = sym_alloc(str, len, 0);
 
-  printf("%s %.*s %s %p\n", __func__, len, str, ret);
+  //printf("%s %.*s %s %p\n", __func__, len, str, ret);
   return ret;
 }
 
@@ -575,6 +575,10 @@ int getreg(struct arg *arg, char *buf, int len)
       arg->value = PC; goto out;
     } else if(buf[0] == 'z' && buf[1] == 'r') {
       arg->value = ZR; goto out;
+    } else if(buf[0] == 'f' && buf[1] == 'r') {
+      arg->value = FR; goto out;
+    } else if(buf[0] == 'x' && buf[1] == 'r') {
+      arg->value = XR; goto out;
     } else if(buf[0] == 'r') {
       if(!isdigit(buf[1]))
         goto fail;
@@ -636,6 +640,9 @@ int skip_blank(char *buf, int len)
   return orig_len - len;
 }
 
+//int skip_char(char *buf) {
+//}
+
 /* space must be skipped beforehand */
 int get_reglist(struct arg *arg, char *buf, int len) 
 {
@@ -650,7 +657,7 @@ int get_reglist(struct arg *arg, char *buf, int len)
 
   arg->reglist_len = 0;
 
-  struct arg reg;
+  struct arg reg, altreg;
 
   while(1) {
     memset(&reg, 0, sizeof(reg));
@@ -659,8 +666,24 @@ int get_reglist(struct arg *arg, char *buf, int len)
     if(toklen > 0) {
       assert(reg.type == ARG_REG);
       advance(&buf, &len, toklen);
+      if(len && *buf == '-') {
+        advance(&buf, &len, 1);
+        toklen = getreg(&altreg, buf, len);
+        if(toklen < 0) return -1;
+        advance(&buf, &len, toklen);
+
+        int lo = reg.value, hi = altreg.value;
+        if(lo <= hi){
+          for(int i = lo; i <= hi; ++i)
+            arg->reglist[arg->reglist_len++] = i;
+        } else {
+          for(int i = lo; i >= hi; --i)
+            arg->reglist[arg->reglist_len++] = i;
+        }
+      } else {
+        arg->reglist[arg->reglist_len++] = reg.value;
+      }
       advance(&buf, &len, skip_next_comma(buf, len));
-      arg->reglist[arg->reglist_len++] = reg.value;
     } else 
       break;
   }
@@ -910,6 +933,10 @@ int getarg(struct arg *arg, char **buf, int *len)
         arg->value = PC;
       } else if(tok[0] == 'z' && tok[1] == 'r' && (flags |= 0x2)) {
         arg->value = ZR;
+      } else if(tok[0] == 'f' && tok[1] == 'r' && (flags |= 0x2)) {
+        arg->value = FR;
+      } else if(tok[0] == 'x' && tok[1] == 'r' && (flags |= 0x2)) {
+        arg->value = XR;
       } else if(tok[0] == 'r') {
         if(!isdigit(tok[1]))
           break;
@@ -956,7 +983,30 @@ int getarg(struct arg *arg, char **buf, int *len)
 #endif
 
 #if 1
-  if(isdigit(**buf)) { /* number */
+  if(**buf == '-' || isdigit(**buf)) { /* number */
+#if 1
+    s = *buf + *len;
+    long value = strtol(*buf, &s , 0);
+    if(errno != 0 || s == NULL)
+      fail("Invalid immediate value");
+
+    if(value > 0) {
+      assert(value >= INT16_MIN);
+      //int16_t v16 = value;
+      arg->value = (uint16_t)(int16_t)value;
+      printf("ARG %04x\n", arg->value);
+    } else {
+      assert(value <= UINT16_MAX);
+      arg->value = (uint16_t)value;
+    }
+
+    *len -= s - *buf;
+    *buf = s;
+    arg->type = ARG_IMM;
+    goto out;
+
+
+#else
     s = *buf + *len;
     if(*len > 2 && **buf == '0') {
       switch((*buf)[1]) {
@@ -975,6 +1025,7 @@ int getarg(struct arg *arg, char **buf, int *len)
     *buf = s;
     arg->type = ARG_IMM;
     goto out;
+#endif
   }
 #endif
 
@@ -1110,11 +1161,32 @@ void do_emit_inst(
     switch(desc->op) {
     case AOP_SW:
       assert(a && a->type == ARG_REG && b);
+      //if(c) {
+      //  printf("%p %d %d\n", c, c->type, c->value);
+      //  assert(c->type == ARG_IMM || c->type == ARG_INVALID);
+      //  assert((c->value & 0xF) == c->value);
+      //}
       if(b->type == ARG_REG) {
-        EMIT_INST(OP_SW, a, b);
+        struct arg *addend = NULL;
+        if(c) {
+          switch(c->type) {
+            case ARG_REG: 
+              addend = c; 
+              break;
+            case ARG_IMM: 
+              EMIT_INST(AOP_MOV, &rarg[XR], c);
+              addend = &rarg[XR]; 
+              break;
+            case ARG_INVALID:
+              break;
+            default:
+              assert(0);
+          }
+        }
+        EMIT_INST(OP_SW, a, b, addend);
       } else if(b->type == ARG_IMM) {
         EMIT_INST(AOP_MOV, &rarg[XR], b);
-        EMIT_INST(OP_SW, a, &rarg[XR]);
+        EMIT_INST(OP_SW, a, &rarg[XR], c);
       } else {
         assert(0);
       }
@@ -1160,6 +1232,11 @@ void do_emit_inst(
         assert(0);
       }
       break;
+    case AOP_ORI:
+      //assert(a && a->type == ARG_REG && b && b->type == ARG_IMM && !c);
+      printf("%p %p %p", a, b, c);
+      EMIT_INST(OP_ORI, a, b);
+      break;
     case AOP_MOV:
       assert(a && a->type == ARG_REG && b);
       if(b->type == ARG_REG) {
@@ -1171,17 +1248,29 @@ void do_emit_inst(
 
         EMIT_INST(AOP_ADD, a, &rarg[ZR], &rarg[ZR]);
         uint16_t value = b->value;
-        if(b->value > 0) {
-          if(b->value > 0xFF) {
-            b->reftype = REF_UPPER;
-            EMIT_INST(OP_ORI, a, b);
-            arg.type = ARG_IMM;
-            arg.value = 8;
-            EMIT_INST(OP_SLI, a, a, &arg);
-          }
+
+        if(b->value & 0xFF00) {
+          b->reftype = REF_UPPER;
+          EMIT_INST(OP_ORI, a, b);
+          arg.type = ARG_IMM;
+          arg.value = 8;
+          EMIT_INST(OP_SLI, a, a, &arg);
+        }
+
+        if(b->value & 0x00FF) {
           b->reftype = REF_LOWER;
           EMIT_INST(OP_ORI, a, b);
         }
+
+        //if(b->value > 0) {
+        //  if(b->value > 0xFF) {
+        //    b->reftype = REF_UPPER;
+        //    EMIT_INST(OP_ORI, a, b);
+        //    arg.type = ARG_IMM;
+        //    arg.value = 8;
+        //    EMIT_INST(OP_SLI, a, a, &arg);
+        //  }
+        //}
       } else {
         assert(0);
       }
@@ -1203,13 +1292,23 @@ void do_emit_inst(
       EMIT_INST(OP_HALT);
       break;
      case AOP_SUB: /* for now this is our subtraction */
-      assert(a && a->type == ARG_REG);
-      assert(b && b->type == ARG_REG);
-      assert(c);
+      //assert(a && a->type == ARG_REG);
+      //assert(b && b->type == ARG_REG);
+      //assert(c);
 
-      EMIT_INST(OP_NAND, a, a, a);
-      EMIT_INST(AOP_ADD,  a, b, c);
-      EMIT_INST(OP_NAND, a, a, a);
+      //EMIT_INST(OP_NAND, a, a, a);
+      //EMIT_INST(AOP_ADD,  a, b, c);
+      //EMIT_INST(OP_NAND, a, a, a);
+
+      assert(a && a->type == ARG_REG && b && b->type == ARG_REG && c);
+      if(c->type == ARG_REG) {
+        EMIT_INST(OP_SUB, a, b, c);
+      } else if(c->type == ARG_IMM) {
+        EMIT_INST(AOP_MOV, &rarg[XR], c);
+        EMIT_INST(OP_SUB, a, b, &rarg[XR]);
+      } else {
+        assert(0);
+      }
       break;
     case AOP_SUBI: /* for now this is our subtraction */
       assert(a && a->type == ARG_REG);
@@ -1222,10 +1321,9 @@ void do_emit_inst(
       printf("type=%d\n" ,a->type);
       switch(a->type) {
       case ARG_REG:
-        EMIT_INST(OP_SW, a, &rarg[SP]);
         arg.type = ARG_IMM;
         arg.value = 2;
-        EMIT_INST(AOP_ADD, &rarg[SP], &rarg[SP], &arg);
+        EMIT_INST(AOP_SW, a, &rarg[SP], &arg);
         break;
       case ARG_REGLIST:
         /* Can be optimised */
@@ -1584,7 +1682,7 @@ int main(int argc, char **argv)
   if(symtab_arena) {
     troll_section.type = TROLL_SYMTAB;
     troll_section.size = arena_size(symtab_arena) + sizeof(struct troll_shdr);
-    printf("SYMTAB 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
+    printf("SYMTAB 0x%lx %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
     write(output_fd, &troll_section, sizeof(struct troll_shdr));
     arena_write(symtab_arena, output_fd);
   }
@@ -1592,7 +1690,7 @@ int main(int argc, char **argv)
   if(strtab_arena) {
     troll_section.type = TROLL_STRTAB;
     troll_section.size = arena_size(strtab_arena) + sizeof(struct troll_shdr);
-    printf("STRTAB 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
+    printf("STRTAB 0x%lx %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
     write(output_fd, &troll_section, sizeof(struct troll_shdr));
     arena_write(strtab_arena, output_fd);
   }
@@ -1600,7 +1698,7 @@ int main(int argc, char **argv)
   if(reloca_arena) {
     troll_section.type = TROLL_RELOC;
     troll_section.size = arena_size(reloca_arena)+ sizeof(struct troll_shdr);
-    printf("RELOC 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
+    printf("RELOC 0x%lx %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
     write(output_fd, &troll_section, sizeof(struct troll_shdr));
     arena_write(reloca_arena, output_fd);
   }
@@ -1608,7 +1706,7 @@ int main(int argc, char **argv)
   if(inst_arena) {
     troll_section.type = TROLL_CODE;
     troll_section.size = arena_size(inst_arena) + sizeof(struct troll_shdr);
-    printf("CODE 0x%x %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
+    printf("CODE 0x%lx %d\n", lseek(output_fd, 0, SEEK_CUR), troll_section.size);
     write(output_fd, &troll_section, sizeof(struct troll_shdr));
     arena_write(inst_arena, output_fd);
   }

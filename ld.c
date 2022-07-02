@@ -7,10 +7,9 @@
 
 struct arena *arena = NULL;
 
-int global_offset = 0;
+int global_offset = START;
 
 int output_fd = -1;
-
 
 struct object {
   struct object *next;
@@ -63,6 +62,7 @@ int open_object(const char *filename)
   lseek(fd, 0, SEEK_SET);
 
   obj->offset = global_offset;
+  printf("obj->offset %d\n", obj->offset);
 
   if(obj->filesize != read(fd, obj->filebuf, obj->filesize))
     return -2;
@@ -100,8 +100,9 @@ int open_object(const char *filename)
   assert(obj->strtab_sect);
   assert(obj->reloca_sect);
   printf("obj->strtab_sect->size = %d\n", obj->strtab_sect->size);
-
+  printf("obj->code_sect->size = %d\n", obj->code_sect->size);
   global_offset += obj->code_sect->size;
+  printf("global_offset=%d\n", global_offset);
 
   if(prev) 
     prev->next = obj;
@@ -221,18 +222,17 @@ int dolink(void)
       switch(reloca->type) {
         case TROLL_RELOCA_T_GENERIC_HI8:
           printf(GREEN "reloca %s offset %d = %02x\n" RESET, 
-              symname, reloca->offset, (uint8_t)((value & 0xff00) >> 16));
-          code[reloca->offset] = (uint8_t)((value & 0xff00) >> 16);
+              symname, reloca->offset, (uint8_t)(value >> 8));
+          code[reloca->offset] = (uint8_t)(value >> 8);
           break;
         case TROLL_RELOCA_T_GENERIC_LO8:
           printf(GREEN "reloca %s offset %d = %02x\n" RESET, 
-              symname, reloca->offset, (uint8_t)(uint8_t)(value & 0x00ff));
-          code[reloca->offset] = (uint8_t)(value & 0x00ff);
+              symname, reloca->offset, (uint8_t)(uint8_t)(value & 0xff));
+          code[reloca->offset] = (uint8_t)(value & 0xff);
           break;
         default:
           fail("not handled");
       }
-
       reloca++;
     }
   }

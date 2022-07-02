@@ -1,5 +1,5 @@
 print:
-        push    {lr, r1, r2, r3, r4, r5, r6, r7}
+        push    {lr, r1-r7}
         mov     r1, zr 
         mov     r7, print_out
         mov     r6, 0xFFFF    # writout   
@@ -16,6 +16,6 @@ print:
         add     r2, r2, 2     # Move the index
         b       print_loop
   print_out:
-        pop     {r7, r6, r5, r4, r3, r2, r1, lr}
+        pop     {r7-r1, lr}
         b       lr
 

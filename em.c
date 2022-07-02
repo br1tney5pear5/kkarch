@@ -8,17 +8,50 @@
 // TODO: CLOCKING
 // TODO: ONE STEPPING
 
-#define HZ 3
+#define HZ 20
 
 #define EM_CURSES
 int pse = 0;
+int halt = 0;
 
 int writeout_idx = 0;
 char writeout_buf[1024] = {0};
 const char *status = "";
 int intrnum = 0;
+u16 last_addr = 0;
 
 FILE *output = NULL;
+
+u16 regfiles[2][NUM_R] = {0};
+
+u16 * rawreg(u8 r, u8 bank)
+{
+  if(r < 8) {
+    assert(FR > 8);
+    return &regfiles[bank][r];
+  }
+  return &regfiles[0][r];
+}
+
+u8 regbank()
+{
+  /* FR itself shouldn't be banked! */
+  return !!(regfiles[0][FR] & RF);
+}
+
+void setreg(u8 r, u16 val)
+{
+  *rawreg(r, regbank()) = val;
+}
+
+u16 getreg(u8 r) 
+{
+  return *rawreg(r, regbank());
+}
+
+u8 mem[UINT16_MAX];
+
+
 
 int em_trace = 1;
 void hexdump(char *data, int size, char *caption)
@@ -73,9 +106,6 @@ void hexdump(char *data, int size, char *caption)
 }
 
 u16 prev_regfile[NUM_R];
-u16 regfile[NUM_R];
-
-u8 mem[UINT16_MAX];
 
 void print_regfile() {
   int i = 0;
@@ -84,17 +114,17 @@ void print_regfile() {
       int k = i * 4 + j;
       _print_reg(output,k);
       fprintf(output, ":%04x %c\t", 
-                      regfile[k], 
-                      isprint(regfile[k]) ? (char)regfile[k] : '.');
+                      getreg(k), 
+                      isprint(getreg(k)) ? (char)getreg(k) : '.');
     }
     fprintf(output, "\n");
   }
-  fprintf(output, "r1:%04x \t", regfile[R1]);
-  fprintf(output, "r2:%04x \t", regfile[R2]);
-  fprintf(output, "r3:%04x \t", regfile[R3]);
-  fprintf(output, "pc:%04x \t", regfile[PC]);
-  fprintf(output, "lr:%04x \t", regfile[LR]);
-  fprintf(output, "sp:%04x \t", regfile[SP]);
+  fprintf(output, "r1:%04x \t", getreg(R1));
+  fprintf(output, "r2:%04x \t", getreg(R2));
+  fprintf(output, "r3:%04x \t", getreg(R3));
+  fprintf(output, "pc:%04x \t", getreg(PC));
+  fprintf(output, "lr:%04x \t", getreg(LR));
+  fprintf(output, "sp:%04x \t", getreg(SP));
   fprintf(output, "\n");
 }
 
@@ -111,12 +141,17 @@ void store(u16 addr, u16 val) {
   if(em_trace)
     fprintf(output,"store 0x%04x at %04x\n", val, addr);
 
+  last_addr = addr;
   *(uint16_t*)&mem[addr] = htons(val);
+}
+u16 _load(u16 addr)  {
+  return ntohs(*(u16*)&mem[addr]);
 }
 
 u16 load(u16 addr) 
 {
-  u16 val = ntohs(*(u16*)&mem[addr]);
+  last_addr = addr;
+  u16 val = _load(addr);
 
   if(addr == 0xffff)
     fail("loading from 0xffff, linker fucked");
@@ -132,11 +167,11 @@ u16 reg_cmp(u8 ra, u8 rb)
   u16 res;
   if(em_trace) {
     _print_reg(output,ra);
-    fprintf(output,"(0x%04x) == ", regfile[ra]);
+    fprintf(output,"(0x%04x) == ", getreg(ra));
     _print_reg(output,rb);
-    fprintf(output,"(0x%04x)  ", regfile[rb]);
+    fprintf(output,"(0x%04x)  ", getreg(rb));
   }
-  res = regfile[ra] == regfile[rb];
+  res = getreg(ra) == getreg(rb);
   if(em_trace) {
     fprintf(output,res ? "true" : "false");
     fprintf(output, "\n");
@@ -146,34 +181,33 @@ u16 reg_cmp(u8 ra, u8 rb)
 
 void hard_crash() {
   fprintf(output,"\n=== HARD CRASH ===\n");
-  exit(1);
+  status = "HARD CRASH";
+  halt = 0;
+  //exit(1);
 }
 
-u16 write_reg(u8 reg, u16 val) 
+u16 write_reg(u8 r, u16 val) 
 {
   if(em_trace) {
-    if(reg == PC) {
+    if(r == PC) {
       fprintf(output,"Branch: %04x\n", val);
     }
-    _print_reg(output,reg); fprintf(output," = 0x%04x\n", val);
+    _print_reg(output,r); fprintf(output," = 0x%04x\n", val);
   }
 
-  //if(reg == ZR) {
-  //  hard_crash();
-  //}
-  regfile[reg] = val;
+  setreg(r, val);
 }
 
-void printio(u8 reg) {
+void printio(u8 r) {
   u16 s = 4;
   fprintf(output,"   ");
-  for(u16 i = regfile[reg] - s; i < regfile[reg] + s + 1; ++i) {
+  for(u16 i = getreg(r) - s; i < getreg(r) + s + 1; ++i) {
     fprintf(output,"%02x ", mem[i]);
   }fprintf(output, "\n");
   fprintf(output,"   ");
-  _print_reg(output,reg);
-  fprintf(output,":%04x  ", regfile[reg]);
-  for(u16 i = regfile[reg] - s + 3; i < regfile[reg]; ++i) {
+  _print_reg(output,r);
+  fprintf(output,":%04x  ", getreg(r));
+  for(u16 i = getreg(r) - s + 3; i < getreg(r); ++i) {
     fprintf(output,"   ");
   }
   fprintf(output,"^^^^^\n");
@@ -204,8 +238,10 @@ int interrupts_enabled = 1;
 int presses = 0;
 int check_interrupts()
 {
-//  if(!interrupts_enabled)
-//    return 0;
+  /* Check if interrupts enabled */
+  if(!(getreg(FR) & IF)) {
+    return 0;
+  }
 
   int c = getch();
   intrnum = c; 
@@ -216,10 +252,18 @@ int check_interrupts()
   }
 
   if(c > 0 && load(KBINTR)) {
-    fprintf(output, "c=%d mem=%04x\n", c, load(KBINTR));
-    regfile[SP] = INT_STACK;
-    regfile[LR] = PC;
-    regfile[PC] = load(KBINTR);
+    /* Save PC in the second bank */
+    *rawreg(ILR, 1) = getreg(PC);
+    setreg(PC, load(KBINTR));
+
+    //getreg(FR) |= RF; /* switch register bank */
+    //regfiles[1][LR] = getreg(PC);
+    //regfiles[PC] = getreg(PC);
+
+    //getreg(R10) = LR;
+    //fprintf(output, "c=%d mem=%04x\n", c, load(KBINTR));
+    //getreg(SP) = INT_STACK;
+    //getreg(LR) = PC;
     status = "INTERRUPT";
   }
 }
@@ -239,6 +283,7 @@ void rectangle(int y1, int x1, int y2, int x2)
 }
 
 #define RING_SIZE 64
+int inst_ring_cnt = 0;
 int inst_ring_idx = 0;
 
 struct {
@@ -262,17 +307,42 @@ void regdumpw(int y, int x)
 
       //FILE *fbuf = fmemopen(strbuf, sizeof(strbuf), "w");
       //_print_reg(fbuf, k);
-      //fprintf(fbuf, ":%04x\t", regfile[k]);
+      //fprintf(fbuf, ":%04x\t", getreg(k));
 
-      if(regfile[k] != prev_regfile[k])
-	attron(COLOR_PAIR(1));
+//      if(getreg(k) != prev_getreg(k))
+//	attron(COLOR_PAIR(1));
 
-      mvprintw(y + i, x + j * 12, "%3s:%05x", 
-          regname_cstr(k), regfile[k]);
+      mvprintw(y + i, x + j * 12, "%3s: %04x", 
+          regname_cstr(k), getreg(k));
       //fclose(fbuf);
 
-      if(regfile[k] != prev_regfile[k])
-	attroff(COLOR_PAIR(1));
+//      if(getreg(k) != prev_getreg(k))
+//	attroff(COLOR_PAIR(1));
+    }
+  }
+  move(y + 5, x);
+  printw("ZF=%d ", !!(getreg(FR) & ZF));
+  printw("IF=%d ", !!(getreg(FR) & IF));
+  printw("TF=%d ", !!(getreg(FR) & TF));
+  printw("RF=%d ", !!(getreg(FR) & RF));
+}
+
+
+void memdumpw(int y, int x) 
+{
+  move(y,x);
+  for(int i = -7; i < 8; ++i) {
+    move(y + i + 4,x);
+    u16 addr = last_addr + 8*i;
+    printw("%04x:  ", addr);
+    for(int j = 0; j < 8; ++j) {
+      if(i == 0 && j < 2) {
+        attron(COLOR_PAIR(1));
+      }
+      printw("%02x ", mem[addr + j]);
+      if(i == 0 && j < 2) {
+        attroff(COLOR_PAIR(1));
+      }
     }
   }
 }
@@ -288,7 +358,7 @@ void refresh_curses(struct inst inst)
   //  mvaddch(i, i, '0');
   //}
   
-  mvprintw(0,2, "intr %s %d %04x", status, intrnum, load(KBINTR));
+  mvprintw(0,2, "intr %s %d %04x", status, intrnum, _load(KBINTR));
 
   do {
     int x = 2, y = 2;
@@ -301,12 +371,13 @@ void refresh_curses(struct inst inst)
 
 #if 1
     inst_ring[inst_ring_idx].inst = inst;
-    inst_ring[inst_ring_idx].pc = regfile[PC];
+    inst_ring[inst_ring_idx].pc = getreg(PC);
+    inst_ring_cnt++;
 
     int n = 30;
 
     mvprintw(y + h + 1 + n, x + 0, ">");
-    for(int off = 0; off < n; ++off) {
+    for(int off = 0; off < n && off < inst_ring_cnt; ++off) {
       memset(strbuf, 0 , 512);
       struct inst inst = inst_ring[(inst_ring_idx + off) & (RING_SIZE - 1)].inst;
       uint16_t pc = inst_ring[(inst_ring_idx + off) & (RING_SIZE - 1)].pc;
@@ -341,22 +412,26 @@ void refresh_curses(struct inst inst)
       switch(inst.op){
         case OP_SW:
           printw("store %04x at %04x", 
-              regfile[inst.ra], regfile[inst.rb]);
+              getreg(inst.ra), getreg(inst.rb));
           break;
         case OP_LW:
           printw("load %04x from %04x", 
-              regfile[inst.ra], regfile[inst.rb]);
+              getreg(inst.ra), getreg(inst.rb));
           break;
         case OP_BEQ:
           if(reg_cmp(inst.rb, inst.rc))
-            printw("branch to %04x", regfile[inst.ra]);
+            printw("branch to %04x", getreg(inst.ra));
       }
     }
     if(--inst_ring_idx < 0) inst_ring_idx = RING_SIZE - 1;
 
 #endif
     regdumpw(y + h + 2, x + w + 2);
-
+    for(int i = 0; i < NUM_R; ++i) {
+      prev_regfile[i] = getreg(i);
+    }
+    //memcpy(prev_regfile, regfile, NUM_R * sizeof(u16));
+    memdumpw(y + h + 13, x + w + 2);
   } while(0);
   refresh();
 }
@@ -391,13 +466,14 @@ int main(int argc, char **argv)
 #else
   output = stdout;
 #endif
+  last_addr = START;
 
   assert(argc > 1);
   int fd = open(argv[1], O_RDONLY);
   if(fd < 0) fail("Fail");
-  int r = read(fd, mem, UINT16_MAX);
+  int r = read(fd, mem + START, UINT16_MAX);
 
-  regfile[PC] = 0;
+  setreg(PC, START);
   struct inst inst;
 
 #if 0
@@ -413,66 +489,89 @@ int main(int argc, char **argv)
   fprintf(output, "Emulator\n");
   //hexdump(mem, r, "mem");
 
-  for(int i = 0; i < 2000; ++i) {
-    inst.word = ntohs(*(u16*)&mem[regfile[PC]]);
+  //for(int i = 0; i < 2000; ++i) {
+  while(true) {
+    inst.word = ntohs(*(u16*)&mem[getreg(PC)]);
 
     if(em_trace) {
-      fprintf(output, "%04x > ", regfile[PC]);
+      fprintf(output, "%04x > ", getreg(PC));
       inst_print(output,inst);
     }
 
     if(!pse) {
-      regfile[PC] += 2;
+      setreg(PC, getreg(PC) + 2);
 
       switch(inst.op) {
       case OP_ADD:
-        write_reg(inst.ra, regfile[inst.rb] + regfile[inst.rc]);
+        write_reg(inst.ra, getreg(inst.rb) + getreg(inst.rc));
         break;
-      //case OP_ADDI:
-      //  write_reg(inst.ra, regfile[inst.ra] + inst.imm);
-      //  break;
+      case OP_SUB:
+        write_reg(inst.ra, getreg(inst.rb) - getreg(inst.rc));
+        if(getreg(inst.ra))
+          setreg(FR, getreg(FR) & ~ZF);
+          //getreg(FR) &= ~ZF;
+        else 
+          setreg(FR, getreg(FR) | ZF);
+          //getreg(FR) |= ZF;
+        break;
       case OP_NAND:
-        write_reg(inst.ra, ~(regfile[inst.rb] & regfile[inst.rc]));
+        write_reg(inst.ra, ~(getreg(inst.rb) & getreg(inst.rc)));
         break;
       case OP_SW:
         /* FIXME: rc ignored */
-        store(regfile[inst.rb], regfile[inst.ra]);
+        store(getreg(inst.rb), getreg(inst.ra));
+        setreg(inst.rb, getreg(inst.rb) + (int16_t)getreg(inst.rc));
         if(inst.rb == SP && em_trace) printio(inst.rb);
         break;
       case OP_LW:
         /* FIXME: rc ignored */
-        write_reg(inst.ra, load(regfile[inst.rb]));
+        write_reg(inst.ra, load(getreg(inst.rb)));
+        setreg(inst.rb, getreg(inst.rb) + (int16_t)getreg(inst.rc));
         if(inst.rb == SP && em_trace) printio(inst.rb);
         break;
       case OP_ORI:
-        write_reg(inst.ra, regfile[inst.ra] | inst.imm);
+        write_reg(inst.ra, getreg(inst.ra) | inst.imm);
+        break;
+      case OP_XORI:
+        write_reg(inst.ra, getreg(inst.ra) ^ inst.imm);
         break;
       case OP_SLI: 
-        write_reg(inst.ra, regfile[inst.rb] << inst.rc);
+        write_reg(inst.ra, getreg(inst.rb) << inst.rc);
         break;
       case OP_SRI: 
-        write_reg(inst.ra, regfile[inst.rb] >> inst.rc);
+        write_reg(inst.ra, getreg(inst.rb) >> inst.rc);
         break;
       case OP_BEQ:
         if(reg_cmp(inst.rb, inst.rc))
-          write_reg(PC, regfile[inst.ra]);
+          write_reg(PC, getreg(inst.ra));
+        break;
+      case OP_FREG:
+        write_reg(inst.ra, *rawreg(inst.rb, !regbank()));
         break;
       case OP_HALT:
         fprintf(output, "== HALT ==\n");
-        pause();
-        goto exit;
+        halt = true;
+        goto nointr;
+        break;
+
       default:
         hard_crash();
       }
-
-      regfile[R0] = 0;
     }
 
     check_interrupts();
+
+    setreg(R0, 0);
+
+nointr:
     if(!pse) 
       refresh_curses(inst);
 
-    memcpy(prev_regfile, regfile, sizeof(regfile));
+    if(halt) {
+      pause();
+      goto exit;
+    }
+
     usleep(1000 * 1000/HZ);
   }
 
