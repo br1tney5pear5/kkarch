@@ -31,6 +31,7 @@ kbintr:
         mov     sp, r6
         mov     xr, r5
         _xori   fr, 0x8         # Switch to normal registers
+        # FIXME!
         _xori   fr, 0x2         # Enable interrupts
         _freg   pc, r7
         halt
