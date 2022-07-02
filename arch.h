@@ -37,10 +37,9 @@ enum {
 typedef uint16_t u16;
 typedef uint8_t u8;
 
-#define INST_A (1 << 0)
-#define INST_B (1 << 1)
-#define INST_C (1 << 2)
-
+#define INST_A   (1 << 0)
+#define INST_B   (1 << 1)
+#define INST_C   (1 << 2)
 #define INST_IMM (1 << 3)
 
 #define INST_AB INST_A | INST_B
@@ -139,28 +138,40 @@ struct inst {
   };
 };
 
-void u16_print(u16 inst) 
+void u16_print(FILE *out, u16 inst) 
 {
-  printf("%04x  ", inst);
+  fprintf(out, "%04x  ", inst);
 
   for(int i = 15; i >= 0; --i)
-    printf("%d", 1 & (inst >> i));
+    fprintf(out, "%d", 1 & (inst >> i));
 }
 
-void _print_reg(u8 r) {
+void _print_reg(FILE *out, u8 r) {
   switch(r) {
-    case ZR: printf("zr"); break;
-    case SP: printf("sp"); break;
-    case PC: printf("pc"); break;
-    case LR: printf("lr"); break;
-    case XR: printf("xr"); break;
-    default: printf("r%u", r); break;
+    case ZR: fprintf(out, "zr"); break;
+    case SP: fprintf(out, "sp"); break;
+    case PC: fprintf(out, "pc"); break;
+    case LR: fprintf(out, "lr"); break;
+    case XR: fprintf(out, "xr"); break;
+    default: fprintf(out, "r%u", r); break;
   }
 }
 
-void inst_print(struct inst inst)
+
+const char *regname_cstr(u8 r) 
 {
-  u16_print(htons(*(u16*)&inst));
+  static const char *names[] = {
+    "zr", "r1", "r2", "r3",
+    "r4", "r5", "r6", "r7",
+    "r8", "r9", "r10", "r11",
+    "sp", "lr", "pc", "xr",
+  };
+  return names[r];
+}
+
+void inst_print2(FILE *out, struct inst inst)
+{
+  u16_print(out, htons(*(u16*)&inst));
   
   struct inst_desc *desc = NULL;
   for(int i = 0; i < 8; ++i) {
@@ -169,30 +180,67 @@ void inst_print(struct inst inst)
       break;
     }
   }
-  printf("  ");
+  fprintf(out,"  ");
 
   if(desc == NULL) {
-    printf("???");
+    fprintf(out,"???");
     goto exit;
   }
 
-  printf("%s", desc->opcode);
+  fprintf(out,"%-5s", desc->opcode);
 
   if(desc->type & INST_A) {
-    printf("  "); _print_reg(inst.ra);
+    fprintf(out,"  "); _print_reg(out,inst.ra);
     if(desc->type & INST_B) {
-      printf("  "); _print_reg(inst.rb);
+      fprintf(out,"  "); _print_reg(out,inst.rb);
       if(desc->type & INST_C) {
-        printf("  "); _print_reg(inst.rc);
+        fprintf(out,"  "); _print_reg(out,inst.rc);
       } else if (desc->type & INST_IMM) {
-        printf(", %d", inst.rc);
+        fprintf(out,", %d", inst.rc);
       }
     } else if (desc->type & INST_IMM) {
-      printf(", %d", inst.imm);
+      fprintf(out,", %d", inst.imm);
     }
   }
 exit:
-  printf("\n");
+  return;
+}
+
+void inst_print(FILE *out, struct inst inst)
+{
+  //u16_print(out, htons(*(u16*)&inst));
+  
+  struct inst_desc *desc = NULL;
+  for(int i = 0; i < 8; ++i) {
+    if(inst.op == opcode_map[i].op) {
+      desc = &opcode_map[i];
+      break;
+    }
+  }
+  fprintf(out,"  ");
+
+  if(desc == NULL) {
+    fprintf(out,"???");
+    goto exit;
+  }
+
+  fprintf(out,"%-5s", desc->opcode);
+
+  if(desc->type & INST_A) {
+    fprintf(out,"  "); _print_reg(out,inst.ra);
+    if(desc->type & INST_B) {
+      fprintf(out,"  "); _print_reg(out,inst.rb);
+      if(desc->type & INST_C) {
+        fprintf(out,"  "); _print_reg(out,inst.rc);
+      } else if (desc->type & INST_IMM) {
+        fprintf(out,", %d", inst.rc);
+      }
+    } else if (desc->type & INST_IMM) {
+      fprintf(out,", %d", inst.imm);
+    }
+  }
+exit:
+  fprintf(out,"\n");
 }
 
 #define fail(...) \

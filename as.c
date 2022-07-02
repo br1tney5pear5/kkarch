@@ -352,7 +352,7 @@ void emit_word(u16 word)
 void emit_data2(struct inst inst, size_t n) 
 {
   printf("emit: %04x: ", offset);
-  u16_print(inst.word);
+  u16_print(stdout, inst.word);
   printf("\n");
   printf(" *** %zu\n", n);
   for(int i = 0; i < n; ++i)
@@ -362,7 +362,7 @@ void emit_data2(struct inst inst, size_t n)
 void emit_data(struct inst inst) 
 {
   printf("emit: %04x: ", offset);
-  u16_print(inst.word);
+  u16_print(stdout, inst.word);
   printf("\n");
   emit_word(inst.word);
 }
@@ -373,7 +373,7 @@ void emit(struct inst inst)
   //  fail("TOo many instructions");
 
   printf("emit: %04x: ", offset);
-  inst_print(inst);
+  inst_print(stdout,inst);
   emit_word(inst.word);
 }
 
@@ -416,7 +416,7 @@ char strs[100][100];
 void print_arg(struct arg *arg) 
 {
   switch(arg->type) {
-  case ARG_REG: printf("register: "); _print_reg(arg->value); printf("\n"); break;
+  case ARG_REG: printf("register: "); _print_reg(stdout,arg->value); printf("\n"); break;
   case ARG_STR: printf("string: %s\n", strs[arg->value]); break;
   case ARG_IMM: printf("immediate: %d\n", arg->value); break;
   default: printf("???\n"); break;
