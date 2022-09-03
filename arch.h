@@ -52,6 +52,7 @@ typedef uint8_t u8;
 #define INST_B   (1 << 1)
 #define INST_C   (1 << 2)
 #define INST_IMM (1 << 3)
+#define INST_ARGLIST  (1 << 4)
 
 #define INST_AB INST_A | INST_B
 #define INST_ABC INST_A | INST_B | INST_C
@@ -81,7 +82,9 @@ typedef uint8_t u8;
   X( "_xor" ,  OP_NAND,   INST_ABC    )\
   X( "_beq" ,  OP_BEQ,    INST_ABC    )\
   X( "_b"   ,  OP_B,      INST_A_IMM  )\
-  X( "_freg",  OP_FREG,   INST_AB  )\
+  X( "_freg",  OP_FREG,   INST_AB     )\
+  X( "_stmr",  OP_STMR,   INST_ABC    )\
+  X( "_ldmr",  OP_LDMR,   INST_ABC    )\
 
 #define ALIAS_INSTRUCTIONS_XMACRO\
   X( "add",    AOP_ADD,    INST_ABC    )\
@@ -191,7 +194,7 @@ void inst_print2(FILE *out, struct inst inst)
   u16_print(out, htons(*(u16*)&inst));
   
   struct inst_desc *desc = NULL;
-  for(int i = 0; i < 8; ++i) {
+  for(int i = 0; i < 16; ++i) {
     if(inst.op == opcode_map[i].op) {
       desc = &opcode_map[i];
       break;
@@ -234,10 +237,10 @@ void inst_print(FILE *out, struct inst inst)
       break;
     }
   }
-  fprintf(out,"  ");
+  fprintf(out, "  ");
 
   if(desc == NULL) {
-    fprintf(out,"???");
+    fprintf(out,"opcode=%d ???", inst.op);
     goto exit;
   }
 

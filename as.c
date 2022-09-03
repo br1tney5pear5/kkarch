@@ -25,6 +25,8 @@ u16 crc16(const u8 * data, size_t size, u16 prev)
   return ~crc;
 }
 
+int inst_count[16] = {0};
+
 struct arena *strtab_arena = NULL;
 struct arena *symtab_arena = NULL;
 
@@ -1112,12 +1114,16 @@ void emit_inst(
 }
 
 
+
 void actually_emit(
     struct inst_desc *desc, struct arg *a, struct arg *b, struct arg *c)
 {
   struct inst inst = {};
   //printf("actually emit %s\n", desc->opcode);
   inst.op = desc->op;
+  inst_count[inst.op]++;
+
+
   if(a && desc->type & INST_A) {
     inst.ra = a->value;
     if(b) {
@@ -1131,6 +1137,11 @@ void actually_emit(
       }
     }
   }
+  FILE * f = fopen("code.dump", "a+");
+  inst_print2(f, inst);
+  fprintf(f, "\n");
+  fclose(f);
+
   emit(inst);
 }
 
@@ -1321,18 +1332,25 @@ void do_emit_inst(
       printf("type=%d\n" ,a->type);
       switch(a->type) {
       case ARG_REG:
-        arg.type = ARG_IMM;
-        arg.value = 2;
-        EMIT_INST(AOP_SW, a, &rarg[SP], &arg);
+        EMIT_INST(OP_STMR, a, a, &rarg[SP]);
         break;
-      case ARG_REGLIST:
-        /* Can be optimised */
-        arg.type = ARG_REG;
-        for(int i = 0; i < a->reglist_len; ++i) {
-          arg.value = a->reglist[i];
-          EMIT_INST(AOP_PUSH, &arg);
+      case ARG_REGLIST: {
+        int first = 0;
+        struct arg breg = { .value = a->reglist[first], .type = ARG_REG };
+        struct arg ereg = { .value = a->reglist[first], .type = ARG_REG };
+
+        for(int i = 1; i < a->reglist_len; ++i) {
+          int reg = a->reglist[i];
+          if(reg == ereg.value + 1) {
+            ereg.value = reg;
+          } else {
+            EMIT_INST(OP_STMR, &breg, &ereg, &rarg[SP]);
+            breg.value = reg;
+            ereg.value = reg;
+          }
         }
-        break;
+        EMIT_INST(OP_STMR, &breg, &ereg, &rarg[SP]);
+      } break;
       default:
         assert(0);
       }
@@ -1340,18 +1358,26 @@ void do_emit_inst(
     case AOP_POP:
       switch(a->type) {
       case ARG_REG:
-        arg.type = ARG_IMM;
-        arg.value = 2;
-        EMIT_INST(AOP_SUB, &rarg[SP], &rarg[SP], &arg);
-        EMIT_INST(OP_LW, a, &rarg[SP]);
+        EMIT_INST(OP_LDMR, a, a, &rarg[SP]);
         break;
-      case ARG_REGLIST:
-        arg.type = ARG_REG;
-        for(int i = 0; i < a->reglist_len; ++i) {
-          arg.value = a->reglist[i];
-          EMIT_INST(AOP_POP, &arg);
+      case ARG_REGLIST: {
+        int first = a->reglist_len - 1;
+        struct arg breg = { .value = a->reglist[first], .type = ARG_REG };
+        struct arg ereg = { .value = a->reglist[first], .type = ARG_REG };
+
+        for(int i = a->reglist_len - 2; i >= 0; --i) {
+          int reg = a->reglist[i];
+          if(reg == ereg.value - 1) {
+            ereg.value = reg;
+          } else {
+            EMIT_INST(OP_LDMR, &breg, &ereg, &rarg[SP]);
+            breg.value = reg;
+            ereg.value = reg;
+          }
         }
-        break;
+        EMIT_INST(OP_LDMR, &breg, &ereg, &rarg[SP]);
+
+      } break;
       default:
         assert(0);
       }
@@ -1710,11 +1736,27 @@ int main(int argc, char **argv)
     write(output_fd, &troll_section, sizeof(struct troll_shdr));
     arena_write(inst_arena, output_fd);
   }
+
 #if 0 
   for(int i = 0; i < labelidx; ++i) {
     printf("%04x %s = %04x\n", labels[i].addr, labels[i].name, labels[i].value);
   }
 #endif
+
+
+  {
+    int all_count = 0;
+    for(int i = 0; i < 16; ++i) 
+      all_count += inst_count[i];
+    if(all_count) {
+      printf("Instruction count (%d)\n", all_count);
+      for(int i = 0; i < 16; ++i) { 
+        printf("%-10s %5d %5.1f%%\n", opcode_map[i].opcode, 
+            inst_count[i], 100*(float)inst_count[i]/all_count);
+      }
+    }
+  }
+
 exit:
   //close(fd);
   close(output_fd);

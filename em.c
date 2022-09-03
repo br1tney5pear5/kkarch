@@ -1,5 +1,9 @@
 #include "arch.h"
+#define OPTS_IMPL
+#include "opts.h"
 #include <ncurses.h>
+
+
 
 // TODO: REGFILE
 // TODO: ALU
@@ -8,11 +12,14 @@
 // TODO: CLOCKING
 // TODO: ONE STEPPING
 
-#define HZ 20
-
-#define EM_CURSES
 int pse = 0;
 int halt = 0;
+
+static struct {
+  bool trace;
+  bool curses;
+
+} _g = {0};
 
 int writeout_idx = 0;
 char writeout_buf[1024] = {0};
@@ -53,7 +60,6 @@ u8 mem[UINT16_MAX];
 
 
 
-int em_trace = 1;
 void hexdump(char *data, int size, char *caption)
 {
 	int i; // index in data...
@@ -131,15 +137,17 @@ void print_regfile() {
 
 void store(u16 addr, u16 val) {
   if(addr == 0xffff) {
-    FILE *f = fopen("output", "a+");
-    fprintf(f, "%c", val & 0xFF);
-    fclose(f);
-    char c = val & 0xFF;
-    writeout_buf[writeout_idx++] = isprint(c) ? c :'.';
-    assert(writeout_idx < 1024);
+    if(!_g.curses) {
+      fprintf(stdout, "%c", val & 0xFF);
+      fflush(stdout);
+    } else {
+      char c = val & 0xFF;
+      writeout_buf[writeout_idx++] = isprint(c) ? c :'.';
+      assert(writeout_idx < 1024);
+    }
   } 
-  if(em_trace)
-    fprintf(output,"store 0x%04x at %04x\n", val, addr);
+  if(_g.trace)
+    fprintf(output, "store 0x%04x at %04x\n", val, addr);
 
   last_addr = addr;
   *(uint16_t*)&mem[addr] = htons(val);
@@ -156,7 +164,7 @@ u16 load(u16 addr)
   if(addr == 0xffff)
     fail("loading from 0xffff, linker fucked");
 
-  if(em_trace)
+  if(_g.trace)
     fprintf(output,"load 0x%04x from %04x\n", val, addr);
 
   return val;
@@ -165,14 +173,14 @@ u16 load(u16 addr)
 u16 reg_cmp(u8 ra, u8 rb) 
 {
   u16 res;
-  if(em_trace) {
+  if(_g.trace) {
     _print_reg(output,ra);
     fprintf(output,"(0x%04x) == ", getreg(ra));
     _print_reg(output,rb);
     fprintf(output,"(0x%04x)  ", getreg(rb));
   }
   res = getreg(ra) == getreg(rb);
-  if(em_trace) {
+  if(_g.trace) {
     fprintf(output,res ? "true" : "false");
     fprintf(output, "\n");
   }
@@ -188,7 +196,7 @@ void hard_crash() {
 
 u16 write_reg(u8 r, u16 val) 
 {
-  if(em_trace) {
+  if(_g.trace) {
     if(r == PC) {
       fprintf(output,"Branch: %04x\n", val);
     }
@@ -374,7 +382,7 @@ void refresh_curses(struct inst inst)
     inst_ring[inst_ring_idx].pc = getreg(PC);
     inst_ring_cnt++;
 
-    int n = 30;
+    int n = 20;
 
     mvprintw(y + h + 1 + n, x + 0, ">");
     for(int off = 0; off < n && off < inst_ring_cnt; ++off) {
@@ -438,40 +446,95 @@ void refresh_curses(struct inst inst)
 
 int main(int argc, char **argv) 
 {
-#ifdef EM_CURSES
-  initscr();
-  cbreak();
-  nodelay(stdscr, true);
-  noecho();
-  //noraw();
-  start_color();
-  init_pair(1, COLOR_YELLOW, COLOR_BLACK);
-  init_pair(2, COLOR_MAGENTA, COLOR_BLACK);
+  int clock = 100;
+  const char *image_filename = NULL;
+  {
+    struct option opts[] = {
+      { "image", 'i',
+        .desc = "Troll image to run."
+      },
+      { "clock", 'c',
+        .desc = "Clockspeed in hertz."
+      },
+      { "curses", 'u', OPT_F_BOOLEAN,
+        .desc = "Curses user interface."
+      },
+      { "trace", 't', OPT_F_BOOLEAN,
+        .desc = "Trace the execution.",
+      },
+      { "help", '?', OPT_F_BOOLEAN,
+        .desc = "Print this help."
+      },
+      { NULL },
+    };
+    struct option_parser parser = {};
+    int rc;
+    while(!(rc = parse_options_incrementally(&parser, opts, argc - 1, argv + 1))) 
+    {
+      switch(parser.current->short_name) {
+        case 'i':
+          image_filename = parser.current->string_params[0];
+          break;
+        case 'c':
+          clock = atoi(parser.current->string_params[0]);
+          break;
+        case 'u':
+          _g.curses = true;
+          break;
+        case 't':
+          _g.trace = true;
+          break;
+        case '?':
+          print_options_help(stdout, opts);
+          exit(EXIT_SUCCESS);
+          assert(0);
+      }
+    }
+    if(rc != OPT_E_DONE)
+      exit(EXIT_FAILURE);
+  }
 
+  if(_g.curses) {
+    initscr();
+    cbreak();
+    nodelay(stdscr, true);
+    noecho();
+    //noraw();
+    start_color();
+    init_pair(1, COLOR_YELLOW, COLOR_BLACK);
+    init_pair(2, COLOR_MAGENTA, COLOR_BLACK);
+    //int maxlines = LINES - 1;
+    //int maxcols = COLS - 1;
+    //for(int i = 0; i < maxlines && i < maxcols; ++i) {
+    //  mvaddch(i, i, '0');
+    //}
 
+    //char strbuf[512] = {};
+    //sprintf(strbuf, " kkarch em: (%d,%d)", maxlines, maxcols);
+    //mvaddstr(0,0, strbuf);
+  }
 
-  //int maxlines = LINES - 1;
-  //int maxcols = COLS - 1;
-  //for(int i = 0; i < maxlines && i < maxcols; ++i) {
-  //  mvaddch(i, i, '0');
-  //}
-
-  //char strbuf[512] = {};
-  //sprintf(strbuf, " kkarch em: (%d,%d)", maxlines, maxcols);
-  //mvaddstr(0,0, strbuf);
-#endif
-
-#ifdef EM_CURSES
-  output = fopen("em.out", "w");
-#else
-  output = stdout;
-#endif
+  if(_g.curses) {
+    output = fopen("em.out", "w");
+  } else {
+    output = stdout;
+  }
   last_addr = START;
 
   assert(argc > 1);
-  int fd = open(argv[1], O_RDONLY);
+  int fd = open(image_filename, O_RDONLY);
   if(fd < 0) fail("Fail");
   int r = read(fd, mem + START, UINT16_MAX);
+
+  if(!_g.curses) {
+    for(int i = 0; i < r/2; ++i) {
+      struct inst inst = {
+        .word = ntohs(*(u16*)&mem[START + i])
+      };
+      inst_print2(stdout, inst);
+      printf("\n");
+    }
+  }
 
   setreg(PC, START);
   struct inst inst;
@@ -493,9 +556,9 @@ int main(int argc, char **argv)
   while(true) {
     inst.word = ntohs(*(u16*)&mem[getreg(PC)]);
 
-    if(em_trace) {
+    if(_g.trace) {
       fprintf(output, "%04x > ", getreg(PC));
-      inst_print(output,inst);
+      inst_print2(output,inst); fprintf(output, "\n");
     }
 
     if(!pse) {
@@ -521,13 +584,13 @@ int main(int argc, char **argv)
         /* FIXME: rc ignored */
         store(getreg(inst.rb), getreg(inst.ra));
         setreg(inst.rb, getreg(inst.rb) + (int16_t)getreg(inst.rc));
-        if(inst.rb == SP && em_trace) printio(inst.rb);
+        if(inst.rb == SP && _g.trace) printio(inst.rb);
         break;
       case OP_LW:
         /* FIXME: rc ignored */
         write_reg(inst.ra, load(getreg(inst.rb)));
         setreg(inst.rb, getreg(inst.rb) + (int16_t)getreg(inst.rc));
-        if(inst.rb == SP && em_trace) printio(inst.rb);
+        if(inst.rb == SP && _g.trace) printio(inst.rb);
         break;
       case OP_ORI:
         write_reg(inst.ra, getreg(inst.ra) | inst.imm);
@@ -547,6 +610,32 @@ int main(int argc, char **argv)
         break;
       case OP_FREG:
         write_reg(inst.ra, *rawreg(inst.rb, !regbank()));
+        break;
+      case OP_STMR:
+        if(inst.ra <= inst.rb) {
+          for(int i = inst.ra; i <= inst.rb; ++i) {
+            store(getreg(inst.rc), getreg(i));
+            write_reg(inst.rc, getreg(inst.rc) + 2);
+          }
+        } else {
+          for(int i = inst.ra; i >= inst.rb; --i) {
+            store(getreg(inst.rc), getreg(i));
+            write_reg(inst.rc, getreg(inst.rc) + 2);
+          }
+        }
+        break;
+      case OP_LDMR:
+        if(inst.ra <= inst.rb) {
+          for(int i = inst.ra; i <= inst.rb; ++i) {
+            write_reg(inst.rc, getreg(inst.rc) - 2);
+            write_reg(i, load(getreg(inst.rc)));
+          }
+        } else {
+          for(int i = inst.ra; i >= inst.rb; --i) {
+            write_reg(inst.rc, getreg(inst.rc) - 2);
+            write_reg(i, load(getreg(inst.rc)));
+          }
+        }
         break;
       case OP_HALT:
         fprintf(output, "== HALT ==\n");
@@ -572,15 +661,15 @@ nointr:
       goto exit;
     }
 
-    usleep(1000 * 1000/HZ);
+    usleep(1000 * 1000/clock);
   }
 
 exit:
-#ifdef EM_CURSES
-  getch();
-  refresh();
-  endwin();
-#endif
+  if(_g.curses) {
+    getch();
+    refresh();
+    endwin();
+  }
   print_regfile();
   close(fd);
 }

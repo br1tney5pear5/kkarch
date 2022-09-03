@@ -1,18 +1,19 @@
-main:   
+main:
         bl      setup
 back:   mov     r2, string
         bl      print
         b       back
         halt
 
-string: .ds "Hello World! "
+#string: .ds "Hello World! "
+string: .ds "HW"
 
 setup:
         mov     sp, 0x1000      # Set stack
-        mov     r3, kbintr 
-        mov     r4, 0xFFF0
-        sw      r3, r4          # Interrupt setup
-        ori     fr, 0x2         # Enable interrupts
+#        mov     r3, kbintr 
+#        mov     r4, 0xFFF0
+#        sw      r3, r4          # Interrupt setup
+#        ori     fr, 0x2         # Enable interrupts
         b       lr
 
 kbintr:
@@ -27,7 +28,7 @@ kbintr:
         push    {r5, r6, r7}    # Free up the registers
         mov     r2, errmsg   
         bl      print
-        pop     {r7, r6, r5}        
+        pop     {r5, r6, r7}    # Free up the registers
         mov     sp, r6
         mov     xr, r5
         _xori   fr, 0x8         # Switch to normal registers
@@ -37,6 +38,32 @@ kbintr:
         halt
 
 errmsg: .ds "_INTR_"
+
+
+ltoa_static:
+        .dw 100
+
+ltoa:
+        push    {lr, r1-r7}
+#        mov     r1, 97
+#        mov     r2, ltoa_static
+#        sw      r2, r1
+#        mov     r1, 98
+#        add     r2, r2, 1
+#        sw      r2, r1
+#        mov     r1, 99
+#        add     r2, r2, 1
+#        sw      r2, r1
+#        mov     r2, ltoa_static
+#        bl      print
+        pop     {lr, r1-r7}
+        b       lr
+        
+        
+
+
+
+
 
 
 
