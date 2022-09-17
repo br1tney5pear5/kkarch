@@ -70,21 +70,22 @@ typedef uint8_t u8;
 // RRI
 
 #define INSTRUCTIONS_XMACRO \
-  X( "_halt" , OP_HALT,   0           )\
-  X( "_lw",    OP_LW,     INST_ABC    )\
-  X( "_sw",    OP_SW,     INST_ABC    )\
-  X( "_add",   OP_ADD,    INST_ABC    )\
-  X( "_sub",   OP_SUB,    INST_ABC    )\
-  X( "_ori",   OP_ORI,    INST_A_IMM  )\
-  X( "_xori",  OP_XORI,   INST_A_IMM  )\
-  X( "_sli",   OP_SLI,    INST_AB_IMM  )\
-  X( "_sri",   OP_SRI,    INST_AB_IMM  )\
-  X( "_xor" ,  OP_NAND,   INST_ABC    )\
-  X( "_beq" ,  OP_BEQ,    INST_ABC    )\
-  X( "_b"   ,  OP_B,      INST_A_IMM  )\
-  X( "_freg",  OP_FREG,   INST_AB     )\
-  X( "_stmr",  OP_STMR,   INST_ABC    )\
-  X( "_ldmr",  OP_LDMR,   INST_ABC    )\
+  /* 0 */ X( "_halt" , OP_HALT,   0           )\
+  /* 1 */ X( "_lw",    OP_LW,     INST_ABC    )\
+  /* 2 */ X( "_sw",    OP_SW,     INST_ABC    )\
+  /* 3 */ X( "_add",   OP_ADD,    INST_ABC    )\
+  /* 4 */ X( "_sub",   OP_SUB,    INST_ABC    )\
+  /* 5 */ X( "_ori",   OP_ORI,    INST_A_IMM  )\
+  /* 6 */ X( "_xori",  OP_XORI,   INST_A_IMM  )\
+  /* 7 */ X( "_sli",   OP_SLI,    INST_AB_IMM  )\
+  /* 8 */ X( "_sri",   OP_SRI,    INST_AB_IMM  )\
+  /* 9 */ X( "_nand",  OP_NAND,   INST_ABC    )\
+  /* a */ X( "_beq" ,  OP_BEQ,    INST_ABC    )\
+  /* b */ X( "_b"   ,  OP_B,      INST_A_IMM  )\
+  /* c */ X( "_freg",  OP_FREG,   INST_AB     )\
+  /* d */ X( "_stmr",  OP_STMR,   INST_ABC    )\
+  /* e */ X( "_ldmr",  OP_LDMR,   INST_ABC    )\
+  /* f */
 
 #define ALIAS_INSTRUCTIONS_XMACRO\
   X( "add",    AOP_ADD,    INST_ABC    )\
