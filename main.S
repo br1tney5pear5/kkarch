@@ -1,5 +1,13 @@
 main:
         bl      setup
+
+
+        mov     r1, zr
+        fomov   r1, r1    
+        mov     r2, 'I'
+        fomov   r2, r2    
+        _xori   fr, 16
+
         mov     r1, string
         bl      print
         halt
@@ -29,6 +37,7 @@ console_buffer:
 
 setup:
         mov     sp, 0x1000      # Set stack
+        mov     r4, 0xFFF0      # interrupt vector table lets say
         mov     r3, simple_intr 
         mov     r4, 0xFFF0
         sw      r3, r4          # Interrupt setup
@@ -37,21 +46,29 @@ setup:
 
 simple_intr:
         _xori   fr, 0x2         # Disable interrupts
-        mov     r1, console_buffer
-        mov     r2, console_buffer_index
-
-        and     r3, r2,  0xfffe # Word offset
-        and     r2, r2, 1       # Index parity
-
-        lw      r4, r3 
-        sw      r1, r6          # Write higher byte
+        mov     r1, errmsg
+        bl      print
+        _xori   fr, 0xa
+#        mov     r1, errmsg
+#        bl      print
+#        mov     r6, 0xFFFF      # writout   
+#        sw      r2, r6
+#
+#        mov     r1, console_buffer
+#        mov     r2, console_buffer_index
+#
+#        and     r3, r2,  0xfffe # Word offset
+#        and     r2, r2, 1       # Index parity
+#
+#        lw      r4, r3 
+#        sw      r1, r6          # Write higher byte
         _xori   fr, 0xa
         halt
 
-mul_isr:        
-        _xori   fr, 0x2         # Disable interrupts
-        halt
-        _xori   fr, 0xa
+#mul_isr:        
+#        _xori   fr, 0x2         # Disable interrupts
+#        halt
+#        _xori   fr, 0xa
 
 #kbintr:
 #        _xori   fr, 0x2         # Disable interrupts
@@ -100,7 +117,7 @@ mul_isr:
 #        _freg   pc, r7
 #        halt
 
-errmsg: .ds "_"
+errmsg: .ds "_ERR_"
 
 
 ltoa_static:

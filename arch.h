@@ -41,10 +41,11 @@ enum {
 #define START 0x100
 
 #define ZF (1 << 0) /* Zero flag */
-#define IF (1 << 1) /* Interrupt enable */
+#define IEF (1 << 1) /* Interrupt enable */
 #define TF (1 << 2) /* Trap flag */
 /* TODO: Call this BF */
 #define RF (1 << 3) /* Alternative register bank */
+#define IF (1 << 4) /* Interrupt */
 
 typedef uint16_t u16;
 typedef uint8_t u8;
@@ -135,6 +136,7 @@ enum {
   X( "bleq",   AOP_BLEQ, INST_A        )\
   \
   X( "cmp",    AOP_CMP,  INST_AB       )\
+  X( "int",    AOP_INT,  INST_A        )\
   \
   X( "ori",    AOP_ORI,    INST_A_IMM  )\
   X( "sli",    AOP_SLI,    INST_AB_IMM )\

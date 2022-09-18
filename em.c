@@ -247,7 +247,7 @@ int presses = 0;
 int check_interrupts()
 {
   /* Check if interrupts enabled */
-  if(!(getreg(FR) & IF)) {
+  if(!(getreg(FR) & IEF)) {
     return 0;
   }
 
@@ -259,7 +259,11 @@ int check_interrupts()
     pse = !pse;
   }
 
-  if(c > 0 && load(KBINTR)) {
+  if(c > 0) {
+    *rawreg(FR, 0) |= IF;
+  }
+
+  if(*rawreg(FR, 0) & IF) {
     /* Okay, let's see how we can handle interrupts.
      *  - We must be able to execute an interrupt handler and
      *    return to the interrupted code.
@@ -329,10 +333,11 @@ int check_interrupts()
      */
     /* Save PC in the second bank */
     //*rawreg(ILR, 1) = getreg(PC);
-    *rawreg(R1, 1) = c;
+    *rawreg(R2, 1) = c;
     *rawreg(PC, 1) = load(KBINTR);
     /* TODO: hard crash if already set maybe idk */
     *rawreg(FR, 0) |= RF;
+    *rawreg(FR, 0) &= ~IF;
 
 
     //getreg(FR) |= RF; /* switch register bank */
@@ -401,9 +406,10 @@ void regdumpw(int bank, int y, int x)
   }
   move(y + 5, x);
   printw("ZF=%d ", !!(getreg(FR) & ZF));
-  printw("IF=%d ", !!(getreg(FR) & IF));
+  printw("IEF=%d ", !!(getreg(FR) & IEF));
   printw("TF=%d ", !!(getreg(FR) & TF));
   printw("RF=%d ", !!(getreg(FR) & RF));
+  printw("IF=%d ", !!(getreg(FR) & IF));
 }
 
 
