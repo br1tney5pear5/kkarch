@@ -187,7 +187,7 @@ struct label labels[LBUF_SZ];
 #define IMM_MAX 128
 #define IMM_MASK 127
 
-#define FBUF_SZ 128
+#define FBUF_SZ 256
 char filebuf[FBUF_SZ];
 
 u16 reg(char *reg) {
@@ -1279,6 +1279,13 @@ void do_emit_inst(
     //  EMIT_INST(OP_SLI, a, a, &arg);
     //  break;
 
+    case AOP_SUB:
+      if(c->type != ARG_REG) {
+        EMIT_INST(AOP_MOV, &rarg[XR], c);
+        c = &rarg[XR];
+      }
+      EMIT_INST(OP_SUB, a, b, c);
+      break;
     case AOP_ADD:
       assert(a && a->type == ARG_REG && b && b->type == ARG_REG && c);
       if(c->type == ARG_REG) {
@@ -1348,25 +1355,6 @@ void do_emit_inst(
       break;
     case AOP_HALT:
       EMIT_INST(OP_HALT);
-      break;
-     case AOP_SUB: /* for now this is our subtraction */
-      //assert(a && a->type == ARG_REG);
-      //assert(b && b->type == ARG_REG);
-      //assert(c);
-
-      //EMIT_INST(OP_NAND, a, a, a);
-      //EMIT_INST(AOP_ADD,  a, b, c);
-      //EMIT_INST(OP_NAND, a, a, a);
-
-      assert(a && a->type == ARG_REG && b && b->type == ARG_REG && c);
-      if(c->type == ARG_REG) {
-        EMIT_INST(OP_SUB, a, b, c);
-      } else if(c->type == ARG_IMM) {
-        EMIT_INST(AOP_MOV, &rarg[XR], c);
-        EMIT_INST(OP_SUB, a, b, &rarg[XR]);
-      } else {
-        assert(0);
-      }
       break;
     case AOP_SUBI: /* for now this is our subtraction */
       assert(a && a->type == ARG_REG);
@@ -1532,7 +1520,7 @@ void do_emit_inst(
 
 #endif
     case AOP_CMP:
-      EMIT_INST(OP_SUB, &rarg[ZR], a, b);
+      EMIT_INST(AOP_SUB, &rarg[ZR], a, b);
       break;
     case DOP_PAD: 
       if(offset > a->value)

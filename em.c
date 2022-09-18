@@ -254,12 +254,14 @@ int check_interrupts()
   int c = getch();
   intrnum = c; 
 
-  if(c == 32) {
-    presses++;
-    pse = !pse;
-  }
+  //if(c == 32) {
+  //  presses++;
+  //  pse = !pse;
+  //}
 
   if(c > 0) {
+    *rawreg(R1, 1) = 0;
+    *rawreg(R2, 1) = c;
     *rawreg(FR, 0) |= IF;
   }
 
@@ -332,8 +334,6 @@ int check_interrupts()
      *
      */
     /* Save PC in the second bank */
-    //*rawreg(ILR, 1) = getreg(PC);
-    *rawreg(R2, 1) = c;
     *rawreg(PC, 1) = load(KBINTR);
     /* TODO: hard crash if already set maybe idk */
     *rawreg(FR, 0) |= RF;
@@ -404,12 +404,7 @@ void regdumpw(int bank, int y, int x)
 //	attroff(COLOR_PAIR(1));
     }
   }
-  move(y + 5, x);
-  printw("ZF=%d ", !!(getreg(FR) & ZF));
-  printw("IEF=%d ", !!(getreg(FR) & IEF));
-  printw("TF=%d ", !!(getreg(FR) & TF));
-  printw("RF=%d ", !!(getreg(FR) & RF));
-  printw("IF=%d ", !!(getreg(FR) & IF));
+
 }
 
 
@@ -511,13 +506,21 @@ void refresh_curses(struct inst inst)
     if(--inst_ring_idx < 0) inst_ring_idx = RING_SIZE - 1;
 
 #endif
+#if 1
     regdumpw(0, y + h + 2, x + w + 2);
     for(int i = 0; i < NUM_R; ++i) {
       prev_regfile[i] = getreg(i);
     }
     regdumpw(1, y + h + 7, x + w + 2);
+//  move(y + 5, x);
+//  printw("ZF=%d ", !!(getreg(FR) & ZF));
+//  printw("IEF=%d ", !!(getreg(FR) & IEF));
+//  printw("TF=%d ", !!(getreg(FR) & TF));
+//  printw("RF=%d ", !!(getreg(FR) & RF));
+//  printw("IF=%d ", !!(getreg(FR) & IF));
     //memcpy(prev_regfile, regfile, NUM_R * sizeof(u16));
     memdumpw(y + h + 16, x + w + 2);
+#endif
   } while(0);
   refresh();
 }
