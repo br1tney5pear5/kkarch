@@ -78,21 +78,34 @@ enum {
   XM_STORE_BYTE,
 };
 
+enum {
+  INP_INCREMENT,
+  INP_DECREMENT,
+};
+
+enum {
+  B_F_EQUAL = 0x1,
+  B_F_LINK  = 0x2,
+};
+
+
+
 #define INSTRUCTIONS_XMACRO \
   /* 0 */ X( "_halt" , OP_HALT,   0           )\
-  /* 3 */ X( "_add",   OP_ADD,    INST_ABC    )\
-  /* 4 */ X( "_sub",   OP_SUB,    INST_ABC    )\
-  /* 5 */ X( "_ori",   OP_ORI,    INST_A_IMM  )\
-  /* 6 */ X( "_xori",  OP_XORI,   INST_A_IMM  )\
-  /* 7 */ X( "_sli",   OP_SLI,    INST_AB_IMM  )\
-  /* 8 */ X( "_sri",   OP_SRI,    INST_AB_IMM  )\
-  /* 9 */ X( "_nand",  OP_NAND,   INST_ABC    )\
-  /* a */ X( "_beq" ,  OP_BEQ,    INST_ABC    )\
-  /* b */ X( "_b"   ,  OP_B,      INST_A_IMM  )\
-  /* c */ X( "_fmov",  OP_FMOV,   INST_ABC    )\
-  /* d */ X( "_stmr",  OP_STMR,   INST_ABC    )\
-  /* e */ X( "_ldmr",  OP_LDMR,   INST_ABC    )\
-  /* f */ X( "_xm",    OP_XM,     INST_ABC    )\
+  /* 1 */ X( "_add",   OP_ADD,    INST_ABC    )\
+  /* 2 */ X( "_sub",   OP_SUB,    INST_ABC    )\
+  /* 3 */ X( "_ori",   OP_ORI,    INST_A_IMM  )\
+  /* 4 */ X( "_xori",  OP_XORI,   INST_A_IMM  )\
+  /* 5 */ X( "_sli",   OP_SLI,    INST_AB_IMM  )\
+  /* 6 */ X( "_sri",   OP_SRI,    INST_AB_IMM  )\
+  /* 7 */ X( "_nand",  OP_NAND,   INST_ABC    )\
+  /* 8 */ X( "_beq" ,  OP_BEQ,    INST_ABC    )\
+  /* 9 */ X( "_b"   ,  OP_B,      INST_AB     )\
+  /* a */ X( "_fmov",  OP_FMOV,   INST_ABC    )\
+  /* b */ X( "_stmr",  OP_STMR,   INST_ABC    )\
+  /* c */ X( "_ldmr",  OP_LDMR,   INST_ABC    )\
+  /* d */ X( "_xm",    OP_XM,     INST_ABC    )\
+  /* e */ X( "_inp",   OP_INP,    INST_ABC    )\
 
 #define ALIAS_INSTRUCTIONS_XMACRO\
   X( "fimov",  AOP_FIMOV,  INST_AB     )\
@@ -116,22 +129,26 @@ enum {
   X( "push",   AOP_PUSH, INST_A        )\
   X( "pop",    AOP_POP,  INST_A        )\
   \
+  X( "b",      AOP_B,    INST_A        )\
+  X( "bl",     AOP_BL,   INST_A        )\
+  X( "beq" ,   AOP_BEQ,  INST_ABC    )\
+  X( "bleq",   AOP_BLEQ, INST_A        )\
+  \
+  X( "cmp",    AOP_CMP,  INST_AB       )\
+  \
   X( "ori",    AOP_ORI,    INST_A_IMM  )\
   X( "sli",    AOP_SLI,    INST_AB_IMM )\
   X( "sri",    AOP_SRI,    INST_AB_IMM )\
-  X( "beq" ,   AOP_BEQ,    INST_ABC    )\
   X( "halt" ,  AOP_HALT,   0           )\
   X( "sub",    AOP_SUB,  INST_AB       )\
   X( "subi",   AOP_SUBI, INST_A_IMM    )\
-  X( "bl",     AOP_BL,   INST_A        )\
-  X( "b",      AOP_B,    INST_A        )\
   X( "add",    AOP_ADD,    INST_ABC    )\
-  X( "cmp",    AOP_CMP,  INST_AB       )\
 
 #define DATA_INSTRUCTIONS_XMACRO\
-  X( ".dw",   DOP_DW,   INST_DATA  )\
-  X( ".ds",   DOP_DS,   INST_DATA  )\
-  X( ".pad",  DOP_PAD,   INST_DATA  )\
+  X( ".dw",    DOP_DW,     INST_DATA  )\
+  X( ".ds",    DOP_DS,     INST_DATA  )\
+  X( ".pad",   DOP_PAD,    INST_DATA  )\
+  X( ".global",DOP_GLOBAL, INST_DATA  )\
 
 #define X(OPCODE, OP, TYPE) OP,
 enum {

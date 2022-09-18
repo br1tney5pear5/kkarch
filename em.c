@@ -237,6 +237,7 @@ u16 crc16(const u8 * data, size_t size, u16 prev)
 
 
 #define KBINTR 0xFFF0
+#define MULISR 0xFFF2
 
 #define INT_STACK 0x5000
 
@@ -452,7 +453,7 @@ void refresh_curses(struct inst inst)
     inst_ring[inst_ring_idx].pc = getreg(PC);
     inst_ring_cnt++;
 
-    int n = 20;
+    int n = 30;
 
     mvprintw(y + h + 1 + n, x + 0, ">");
     for(int off = 0; off < n && off < inst_ring_cnt; ++off) {
@@ -496,9 +497,9 @@ void refresh_curses(struct inst inst)
         //  printw("load %04x from %04x", 
         //      getreg(inst.ra), getreg(inst.rb));
         //  break;
-        case OP_BEQ:
-          if(reg_cmp(inst.rb, inst.rc))
-            printw("branch to %04x", getreg(inst.ra));
+        //case OP_BEQ:
+        //  if(reg_cmp(inst.rb, inst.rc))
+        //    printw("branch to %04x", getreg(inst.ra));
       }
     }
     if(--inst_ring_idx < 0) inst_ring_idx = RING_SIZE - 1;
@@ -679,6 +680,15 @@ int main(int argc, char **argv)
         if(reg_cmp(inst.rb, inst.rc))
           write_reg(PC, getreg(inst.ra));
         break;
+
+      case OP_B:
+        if((inst.ra & B_F_EQUAL) && !(getreg(FR) & ZF))
+          break;
+        if(inst.ra & B_F_LINK)
+          write_reg(LR, getreg(PC));
+        write_reg(PC, getreg(inst.rb));
+        break;
+
       case OP_FMOV:
         /* TODO: Trace won't work here */
         if(inst.rc) {
@@ -703,6 +713,7 @@ int main(int argc, char **argv)
           default:
             hard_crash();
         }
+        break;
       case OP_STMR:
         if(inst.ra <= inst.rb) {
           for(int i = inst.ra; i <= inst.rb; ++i) {

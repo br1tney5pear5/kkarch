@@ -1217,14 +1217,26 @@ void do_emit_inst(
 //      }
 //      break;
     case AOP_SW:
-      arg.type = ARG_IMM;
-      arg.value = XM_STORE_WORD;
-      EMIT_INST(OP_XM, a, b, &arg);
-      break;
-
     case AOP_LW:
+      if(a->type != ARG_REG && b->type != ARG_REG) {
+        fail("At least one operand must be a register");
+      } else {
+        if(a->type != ARG_REG) {
+          EMIT_INST(AOP_MOV, &rarg[XR], a);
+          a = &rarg[XR];
+        }
+        if(b->type != ARG_REG) {
+          EMIT_INST(AOP_MOV, &rarg[XR], b);
+          b = &rarg[XR];
+        }
+      }
       arg.type = ARG_IMM;
-      arg.value = XM_LOAD_WORD;
+      if(desc->op == AOP_SW) {
+        arg.value = XM_STORE_WORD;
+      } else {
+        assert(desc->op == AOP_LW);
+        arg.value = XM_LOAD_WORD;
+      }
       EMIT_INST(OP_XM, a, b, &arg);
       break;
 
@@ -1363,6 +1375,33 @@ void do_emit_inst(
       EMIT_INST(OP_ADD,  a, a, b);
       EMIT_INST(OP_NAND, a, a, a);
       break;
+
+    case AOP_NAND:
+      EMIT_INST(OP_NAND, a, b, c);
+      break;
+    case AOP_AND:
+      /* Lots of rooom for constant optimisation, to nand for example */
+      if(c->type != ARG_REG) {
+        EMIT_INST(AOP_MOV, &rarg[XR], c);
+        c = &rarg[XR];
+      }
+      EMIT_INST(AOP_NAND, a, b, c);
+      EMIT_INST(AOP_NOT,  a, a);
+      break;
+    case AOP_OR:
+      EMIT_INST(AOP_NOT,  a,         b);
+      EMIT_INST(AOP_NOT,  &rarg[XR], c);
+      EMIT_INST(AOP_NAND, a, a, &rarg[XR]);
+      break;
+    case AOP_NOT: 
+      EMIT_INST(AOP_NAND, a, b, b);
+      break;
+    case AOP_XOR:
+      EMIT_INST(AOP_OR,   a,         b, c);
+      EMIT_INST(AOP_NAND, &rarg[XR], b, c);
+      EMIT_INST(AOP_AND,  a, a, &rarg[XR]);
+      break;
+
     case AOP_PUSH:
       printf("type=%d\n" ,a->type);
       switch(a->type) {
@@ -1417,34 +1456,14 @@ void do_emit_inst(
         assert(0);
       }
       break;
-    case AOP_NAND:
-      EMIT_INST(OP_NAND, a, b, c);
-      break;
-    case AOP_AND:
-      /* Lots of rooom for constant optimisation, to nand for example */
-      if(c->type != ARG_REG) {
-        EMIT_INST(AOP_MOV, &rarg[XR], c);
-        c = &rarg[XR];
-      }
-      EMIT_INST(AOP_NAND, a, b, c);
-      EMIT_INST(AOP_NOT,  a, a);
-      break;
-    case AOP_OR:
-      EMIT_INST(AOP_NOT,  a,         b);
-      EMIT_INST(AOP_NOT,  &rarg[XR], c);
-      EMIT_INST(AOP_NAND, a, a, &rarg[XR]);
-      break;
-    case AOP_NOT: 
-      EMIT_INST(AOP_NAND, a, b, b);
-      break;
-    case AOP_XOR:
-      EMIT_INST(AOP_OR,   a,         b, c);
-      EMIT_INST(AOP_NAND, &rarg[XR], b, c);
-      EMIT_INST(AOP_AND,  a, a, &rarg[XR]);
-      break;
+
+    //case AOP_MUL:
+    //  break;
+
     case AOP_NOP: 
       EMIT_INST(OP_ADD, &rarg[R0], &rarg[R0], &rarg[R0]);
       break;
+#if 0
     case AOP_BL: {
 
         int mov_cnt = DO_EMIT_COUNT(opcode_map[AOP_MOV], &rarg[XR], &arg, NULL);
@@ -1492,6 +1511,29 @@ void do_emit_inst(
         EMIT_INST(OP_BEQ, a, &rarg[ZR], &rarg[ZR]);
       }
       break;    
+#else
+    case AOP_B:
+    case AOP_BL:
+    case AOP_BEQ:
+    case AOP_BLEQ:
+      if(a->type != ARG_REG) {
+        EMIT_INST(AOP_MOV, &rarg[XR], a);
+        a = &rarg[XR];
+      }
+      arg.type = ARG_IMM;
+      if(desc->op == AOP_BL)
+        arg.value |= B_F_LINK;
+      if(desc->op == AOP_BEQ)
+        arg.value |= B_F_EQUAL;
+      if(desc->op == AOP_BLEQ)
+        arg.value |= B_F_LINK | B_F_EQUAL;
+      EMIT_INST(OP_B, &arg, a);
+      break;
+
+#endif
+    case AOP_CMP:
+      EMIT_INST(OP_SUB, &rarg[ZR], a, b);
+      break;
     case DOP_PAD: 
       if(offset > a->value)
         fail("Invalid pad value");
@@ -1511,6 +1553,9 @@ void do_emit_inst(
         inst.word = htons(*((u16*)str + i));
         emit_data(inst);
       }
+      break;
+    case DOP_GLOBAL:
+      /* TODO */ 
       break;
 
     default:

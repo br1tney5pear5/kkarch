@@ -1,8 +1,12 @@
 main:
         bl      setup
-back:   mov     r2, console_buffer
+        mov     r1, string
         bl      print
-        b       back
+        halt
+
+#back:   mov     r2, string
+#        bl      print
+#        b       back
         halt
 
 string: .ds "Hello World! "
@@ -13,10 +17,13 @@ console_buffer_index:
 console_buffer: 
         .ds "OK!"
 
-run_console:
-        push    {lr}
-        nop
-        pop     {pc}
+#vga_mem_addr: 
+#        0x
+## int (int x, int y, u16 c)
+#vga_putc:
+#        push    {lr}
+#        nop
+#        pop     {pc}
 
 
 
@@ -40,6 +47,11 @@ simple_intr:
         sw      r1, r6          # Write higher byte
         _xori   fr, 0xa
         halt
+
+mul_isr:        
+        _xori   fr, 0x2         # Disable interrupts
+        halt
+        _xori   fr, 0xa
 
 #kbintr:
 #        _xori   fr, 0x2         # Disable interrupts
