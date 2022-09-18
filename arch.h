@@ -31,11 +31,11 @@ enum {
 #define ZR R0
 #define ILR R7
 
-#define FR R11
-#define SP R12
-#define LR R13
+#define SP R11
+#define LR R12
+#define XR R13 
 #define PC R14
-#define XR R15 
+#define FR R15
 
 /* Alternative mode registers */
 #define START 0x100
@@ -43,6 +43,7 @@ enum {
 #define ZF (1 << 0) /* Zero flag */
 #define IF (1 << 1) /* Interrupt enable */
 #define TF (1 << 2) /* Trap flag */
+/* TODO: Call this BF */
 #define RF (1 << 3) /* Alternative register bank */
 
 typedef uint16_t u16;
@@ -69,10 +70,16 @@ typedef uint8_t u8;
 // RI
 // RRI
 
+
+enum {
+  XM_LOAD_WORD,
+  XM_STORE_WORD,
+  XM_LOAD_BYTE,
+  XM_STORE_BYTE,
+};
+
 #define INSTRUCTIONS_XMACRO \
   /* 0 */ X( "_halt" , OP_HALT,   0           )\
-  /* 1 */ X( "_lw",    OP_LW,     INST_ABC    )\
-  /* 2 */ X( "_sw",    OP_SW,     INST_ABC    )\
   /* 3 */ X( "_add",   OP_ADD,    INST_ABC    )\
   /* 4 */ X( "_sub",   OP_SUB,    INST_ABC    )\
   /* 5 */ X( "_ori",   OP_ORI,    INST_A_IMM  )\
@@ -82,32 +89,43 @@ typedef uint8_t u8;
   /* 9 */ X( "_nand",  OP_NAND,   INST_ABC    )\
   /* a */ X( "_beq" ,  OP_BEQ,    INST_ABC    )\
   /* b */ X( "_b"   ,  OP_B,      INST_A_IMM  )\
-  /* c */ X( "_freg",  OP_FREG,   INST_AB     )\
+  /* c */ X( "_fmov",  OP_FMOV,   INST_ABC    )\
   /* d */ X( "_stmr",  OP_STMR,   INST_ABC    )\
   /* e */ X( "_ldmr",  OP_LDMR,   INST_ABC    )\
-  /* f */
+  /* f */ X( "_xm",    OP_XM,     INST_ABC    )\
 
 #define ALIAS_INSTRUCTIONS_XMACRO\
-  X( "add",    AOP_ADD,    INST_ABC    )\
+  X( "fimov",  AOP_FIMOV,  INST_AB     )\
+  X( "fomov",  AOP_FOMOV,  INST_AB     )\
+  X( "stmr",   AOP_STMR,   INST_ABC    )\
+  X( "ldmr",   AOP_LDMR,   INST_ABC    )\
+  \
+  X( "nop",    AOP_NOP,    INST_NOARG  )\
   X( "lw",     AOP_LW,     INST_AB_IMM )\
   X( "sw",     AOP_SW,     INST_AB_IMM )\
+  X( "lb",     AOP_LB,     INST_AB_IMM )\
+  X( "sb",     AOP_SB,     INST_AB_IMM )\
+  X( "mov",    AOP_MOV,    INST_AB     )\
+  \
+  X( "nand",   AOP_NAND,  INST_ABC     )\
+  X( "and",    AOP_AND,  INST_ABC      )\
+  X( "or",     AOP_OR,   INST_ABC      )\
+  X( "not",    AOP_NOT,  INST_AB       )\
+  X( "xor",    AOP_XOR,  INST_ABC      )\
+  \
+  X( "push",   AOP_PUSH, INST_A        )\
+  X( "pop",    AOP_POP,  INST_A        )\
+  \
   X( "ori",    AOP_ORI,    INST_A_IMM  )\
   X( "sli",    AOP_SLI,    INST_AB_IMM )\
   X( "sri",    AOP_SRI,    INST_AB_IMM )\
-  X( "nand" ,  AOP_NAND,   INST_ABC    )\
   X( "beq" ,   AOP_BEQ,    INST_ABC    )\
   X( "halt" ,  AOP_HALT,   0           )\
   X( "sub",    AOP_SUB,  INST_AB       )\
   X( "subi",   AOP_SUBI, INST_A_IMM    )\
-  X( "mov",    AOP_MOV,  INST_AB       )\
-  X( "nop",    AOP_NOP,  INST_NOARG    )\
-  X( "push",   AOP_PUSH, INST_A        )\
-  X( "pop",    AOP_POP,  INST_A        )\
-  X( "and",    AOP_AND,  INST_ABC      )\
   X( "bl",     AOP_BL,   INST_A        )\
   X( "b",      AOP_B,    INST_A        )\
-  X( "sb",     AOP_SB,   INST_AB_IMM   )\
-  X( "lb",     AOP_LB,   INST_AB_IMM   )\
+  X( "add",    AOP_ADD,    INST_ABC    )\
   X( "cmp",    AOP_CMP,  INST_AB       )\
 
 #define DATA_INSTRUCTIONS_XMACRO\
@@ -182,11 +200,19 @@ void _print_reg(FILE *out, u8 r) {
 const char *regname_cstr(u8 r) 
 {
   static const char *names[] = {
-    "zr", "r1", "r2", "r3",
-    "r4", "r5", "r6", "r7",
-    "r8", "r9", "r10", "fr",
-    "sp", "lr", "pc", "xr",
+    "zr",  "r1",  "r2",  "r3",
+    "r4",  "r5",  "r6",  "r7",
+    "r8",  "r9",  "r10", "r11",
+    "r12", "r13", "r14", "r15",
   };
+  switch(r) {
+    case ZR: return "zr";
+    case SP: return "sp";
+    case PC: return "pc";
+    case LR: return "lr";
+    case XR: return "xr";
+    case FR: return "fr";
+  }
   return names[r];
 }
 

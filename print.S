@@ -16,6 +16,4 @@ print:
         add     r2, r2, 2     # Move the index
         b       print_loop
   print_out:
-        pop     {lr, r1-r7}
-        b       lr
-
+        pop     {pc, r1-r7}

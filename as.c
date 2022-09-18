@@ -204,7 +204,7 @@ u16 reg(char *reg) {
 
 
 #if 0
-  case '@':
+  case '':
     if(len < 2)
       goto err;
 
@@ -1170,42 +1170,77 @@ void do_emit_inst(
     emit_cb(desc, a, b, c);
   } else {
     switch(desc->op) {
+    case AOP_FIMOV:
+      arg.type = ARG_IMM; arg.value = 0;
+      EMIT_INST(OP_FMOV, a, b, &arg);
+      break;
+    case AOP_FOMOV:
+      arg.type = ARG_IMM; arg.value = 1;
+      EMIT_INST(OP_FMOV, a, b, &arg);
+      break;
+    case AOP_STMR:
+      EMIT_INST(OP_STMR, a, b, c);
+      break;
+    case AOP_LDMR:
+      EMIT_INST(OP_LDMR, a, b, c);
+      break;
+//    case AOP_SW:
+//      assert(a && a->type == ARG_REG && b);
+//      //if(c) {
+//      //  printf("%p %d %d\n", c, c->type, c->value);
+//      //  assert(c->type == ARG_IMM || c->type == ARG_INVALID);
+//      //  assert((c->value & 0xF) == c->value);
+//      //}
+//      if(b->type == ARG_REG) {
+//        struct arg *addend = NULL;
+//        if(c) {
+//          switch(c->type) {
+//            case ARG_REG: 
+//              addend = c; 
+//              break;
+//            case ARG_IMM: 
+//              EMIT_INST(AOP_MOV, &rarg[XR], c);
+//              addend = &rarg[XR]; 
+//              break;
+//            case ARG_INVALID:
+//              break;
+//            default:
+//              assert(0);
+//          }
+//        }
+//        EMIT_INST(OP_SW, a, b, addend);
+//      } else if(b->type == ARG_IMM) {
+//        EMIT_INST(AOP_MOV, &rarg[XR], b);
+//        EMIT_INST(OP_SW, a, &rarg[XR], c);
+//      } else {
+//        assert(0);
+//      }
+//      break;
     case AOP_SW:
-      assert(a && a->type == ARG_REG && b);
-      //if(c) {
-      //  printf("%p %d %d\n", c, c->type, c->value);
-      //  assert(c->type == ARG_IMM || c->type == ARG_INVALID);
-      //  assert((c->value & 0xF) == c->value);
-      //}
-      if(b->type == ARG_REG) {
-        struct arg *addend = NULL;
-        if(c) {
-          switch(c->type) {
-            case ARG_REG: 
-              addend = c; 
-              break;
-            case ARG_IMM: 
-              EMIT_INST(AOP_MOV, &rarg[XR], c);
-              addend = &rarg[XR]; 
-              break;
-            case ARG_INVALID:
-              break;
-            default:
-              assert(0);
-          }
-        }
-        EMIT_INST(OP_SW, a, b, addend);
-      } else if(b->type == ARG_IMM) {
-        EMIT_INST(AOP_MOV, &rarg[XR], b);
-        EMIT_INST(OP_SW, a, &rarg[XR], c);
-      } else {
-        assert(0);
-      }
+      arg.type = ARG_IMM;
+      arg.value = XM_STORE_WORD;
+      EMIT_INST(OP_XM, a, b, &arg);
       break;
 
     case AOP_LW:
-      EMIT_INST(OP_LW, a, b, c);
+      arg.type = ARG_IMM;
+      arg.value = XM_LOAD_WORD;
+      EMIT_INST(OP_XM, a, b, &arg);
       break;
+
+    case AOP_SB:
+      arg.type = ARG_IMM;
+      arg.value = XM_STORE_BYTE;
+      EMIT_INST(OP_XM, a, b, &arg);
+      break;
+
+    case AOP_LB:
+      arg.type = ARG_IMM;
+      arg.value = XM_LOAD_BYTE;
+      EMIT_INST(OP_XM, a, b, &arg);
+      break;
+
+
 
     //case AOP_SB:
     //  assert(a && a->type == ARG_REG && b);
@@ -1224,13 +1259,13 @@ void do_emit_inst(
     //  EMIT_INST(OP_SW, a, &rarg[XR]);
     //  break;
 
-    case AOP_LB:
-      EMIT_INST(OP_LW, a, b);
-      arg.type = ARG_IMM;
-      arg.value = 8;
-      EMIT_INST(OP_SRI, a, a, &arg);
-      EMIT_INST(OP_SLI, a, a, &arg);
-      break;
+    //case AOP_LB:
+    //  EMIT_INST(AOP_LW, a, b);
+    //  arg.type = ARG_IMM;
+    //  arg.value = 8;
+    //  EMIT_INST(OP_SRI, a, a, &arg);
+    //  EMIT_INST(OP_SLI, a, a, &arg);
+    //  break;
 
     case AOP_ADD:
       assert(a && a->type == ARG_REG && b && b->type == ARG_REG && c);
@@ -1382,9 +1417,30 @@ void do_emit_inst(
         assert(0);
       }
       break;
-    case AOP_AND:
+    case AOP_NAND:
       EMIT_INST(OP_NAND, a, b, c);
-      EMIT_INST(OP_NAND, a, a, a);
+      break;
+    case AOP_AND:
+      /* Lots of rooom for constant optimisation, to nand for example */
+      if(c->type != ARG_REG) {
+        EMIT_INST(AOP_MOV, &rarg[XR], c);
+        c = &rarg[XR];
+      }
+      EMIT_INST(AOP_NAND, a, b, c);
+      EMIT_INST(AOP_NOT,  a, a);
+      break;
+    case AOP_OR:
+      EMIT_INST(AOP_NOT,  a,         b);
+      EMIT_INST(AOP_NOT,  &rarg[XR], c);
+      EMIT_INST(AOP_NAND, a, a, &rarg[XR]);
+      break;
+    case AOP_NOT: 
+      EMIT_INST(AOP_NAND, a, b, b);
+      break;
+    case AOP_XOR:
+      EMIT_INST(AOP_OR,   a,         b, c);
+      EMIT_INST(AOP_NAND, &rarg[XR], b, c);
+      EMIT_INST(AOP_AND,  a, a, &rarg[XR]);
       break;
     case AOP_NOP: 
       EMIT_INST(OP_ADD, &rarg[R0], &rarg[R0], &rarg[R0]);

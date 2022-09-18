@@ -1,43 +1,94 @@
 main:
         bl      setup
-back:   mov     r2, string
+back:   mov     r2, console_buffer
         bl      print
         b       back
         halt
 
-#string: .ds "Hello World! "
-string: .ds "HW"
+string: .ds "Hello World! "
+
+
+console_buffer_index:
+        .dw     0x0000
+console_buffer: 
+        .ds "OK!"
+
+run_console:
+        push    {lr}
+        nop
+        pop     {pc}
+
+
 
 setup:
         mov     sp, 0x1000      # Set stack
-#        mov     r3, kbintr 
-#        mov     r4, 0xFFF0
-#        sw      r3, r4          # Interrupt setup
-#        ori     fr, 0x2         # Enable interrupts
+        mov     r3, simple_intr 
+        mov     r4, 0xFFF0
+        sw      r3, r4          # Interrupt setup
+        ori     fr, 0x2         # Enable interrupts
         b       lr
 
-kbintr:
-        # The interrupt was invoked, therefore we know 
-        # that the IF flag must have been set.
+simple_intr:
         _xori   fr, 0x2         # Disable interrupts
-        ori     fr, 0x8         # Use the second register bank
-        # The pc of the user process is saved in r7 (ilr)
-        mov     r5, xr          # Preserve user's xr
-        mov     r6, sp          # Preserve user's stack pointer
-        mov     sp, 0x5000      # Set interrupt stack (might clobber xr)
-        push    {r5, r6, r7}    # Free up the registers
-        mov     r2, errmsg   
-        bl      print
-        pop     {r5, r6, r7}    # Free up the registers
-        mov     sp, r6
-        mov     xr, r5
-        _xori   fr, 0x8         # Switch to normal registers
-        # FIXME!
-        _xori   fr, 0x2         # Enable interrupts
-        _freg   pc, r7
+        mov     r1, console_buffer
+        mov     r2, console_buffer_index
+
+        and     r3, r2,  0xfffe # Word offset
+        and     r2, r2, 1       # Index parity
+
+        lw      r4, r3 
+        sw      r1, r6          # Write higher byte
+        _xori   fr, 0xa
         halt
 
-errmsg: .ds "_INTR_"
+#kbintr:
+#        _xori   fr, 0x2         # Disable interrupts
+#        mov     sp, 0x5000      # Set interrupt stack
+#        fimov   r1, pc          # Save user's PC
+#        fimov   r2, pc          # Save user's Stack
+#        push    {r1, r2}        # Store both on interrupt's stack
+#        mov     r1, kbintr_in
+#        fomov   pc, r1
+#        fomov   sp, sp
+#        _xori   fr, 0x8
+#kbintr_in:
+#        push    {r1-r4, xr}
+##_xori   fr, 0x2         # Enable interrupts
+#
+#        mov     r2, errmsg
+#        bl      print
+#
+##_xori   fr, 0x2         # Disable interrupts
+#        mov     r1, kbintr_out
+#        fomov   pc, r1
+#        pop     {r1-r4, xr}
+#kbintr_out:
+#
+#        halt
+
+
+#kbintr:
+#        # The interrupt was invoked, therefore we know 
+#        # that the IF flag must have been set.
+#        _xori   fr, 0x2         # Disable interrupts
+#        ori     fr, 0x8         # Use the second register bank
+#        # The pc of the user process is saved in r7 (ilr)
+#        mov     r5, xr          # Preserve user's xr
+#        mov     r6, sp          # Preserve user's stack pointer
+#        mov     sp, 0x5000      # Set interrupt stack (might clobber xr)
+#        push    {r5, r6, r7}    # Free up the registers
+#        mov     r2, errmsg   
+#        bl      print
+#        pop     {r5, r6, r7}    # Free up the registers
+#        mov     sp, r6
+#        mov     xr, r5
+#        _xori   fr, 0x8         # Switch to normal registers
+#        # FIXME!
+#        _xori   fr, 0x2         # Enable interrupts
+#        _freg   pc, r7
+#        halt
+
+errmsg: .ds "_"
 
 
 ltoa_static:

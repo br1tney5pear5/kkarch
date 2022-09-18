@@ -33,8 +33,7 @@ u16 regfiles[2][NUM_R] = {0};
 
 u16 * rawreg(u8 r, u8 bank)
 {
-  if(r < 8) {
-    assert(FR > 8);
+  if(r != FR) {
     return &regfiles[bank][r];
   }
   return &regfiles[0][r];
@@ -260,9 +259,80 @@ int check_interrupts()
   }
 
   if(c > 0 && load(KBINTR)) {
+    /* Okay, let's see how we can handle interrupts.
+     *  - We must be able to execute an interrupt handler and
+     *    return to the interrupted code.
+     *  - We musn't clobber user's registers (including XR)
+     *  - It would be nice if we could support nested interrupts.
+     *
+     * My initial idea was to have two banks of registers - one for user (A), 
+     * one for interrupts (B), and for all registers except flags to be banked. 
+     * Then all we would do on an interrupt is to write ISR address to B.PC and 
+     * switch banks. Then the interrupt wanting to return would simply switch 
+     * banks back, easy and elegant but fails to support nesting.
+     *
+     * Now maybe we don't care about nesting too much tbh. An alternative is
+     * to bank a set of general registers but not PC. Instead, on an interrupt
+     * save PC to B.R8 lets say and disable interrupts, then the ISR would
+     * have to save B.R8 to its stack and reenable interrupts. This way it
+     * could be preempted by another interrupt. 
+     *
+     * I've done that but returning is a problem - load from stack, write
+     * to pc and enabling interrupts all have to happen atomically otherwise 
+     * there are problems. Now that I think about actually I would need
+     * an iret that is like _freg and _xori at once...
+     *
+     * Or maybe banking PC is viable but we use the second bank in the beginning
+     * only - the interrupt would save user registers and switch to bank A when
+     * its ready to do its work - then it could itself be interrupted again. 
+     *
+     * isr:
+     *     DISABLE_INTERRUPTS
+     *     B.R1 = A.PC
+     *     PUSH B.R1
+     *     A.PC = pick_up
+     *     SWITCH BANKS B -> A
+     *  pick_up:
+     *     PUSH <clobbered regs>
+     *     ENABLE INTERRUPTS
+     *
+     *     Do Work... (Here we can be interrupted)
+     *
+     *     DISABLE INTERRUPTS
+     *     POP <clobbered regs>
+     *     SWITCH BANKS A -> B
+     *     POP B.R1
+     *     A.PC = B.R1
+     *     ENABLE INTERRUPTS AND SWITCH BANKS AT THE SAME TIME
+     *
+     *  Thing is - since both enabling interrupts and switching banks
+     *  is controlled by the flags registers, doing both wouldn't require
+     *  adding somet new esoteric instructions!
+     *
+     *  This way we get both (probably unnecessary) flexibility, with 
+     *  (I think) elegance plus simple 'hardware design' - i.e. all it does on
+     *  interrupt is write PC and switch banks and since I'm doing that maybe
+     *  I can disable interrupts on an interrupt straight away to avoid the
+     *  first instruction.
+     *
+     *  Now what's cool about this is if you don't want all this mess you can
+     *  opt out of nestability and have a simple interrupt like so
+     *  simple_isr:
+     *      DISABLE_INTERRUPTS
+     *      Do work...
+     *      ENABLE INTERRUPTS AND SWITCH BANKS AT THE SAME TIME
+     *
+     *  
+     *
+     *
+     */
     /* Save PC in the second bank */
-    *rawreg(ILR, 1) = getreg(PC);
-    setreg(PC, load(KBINTR));
+    //*rawreg(ILR, 1) = getreg(PC);
+    *rawreg(R1, 1) = c;
+    *rawreg(PC, 1) = load(KBINTR);
+    /* TODO: hard crash if already set maybe idk */
+    *rawreg(FR, 0) |= RF;
+
 
     //getreg(FR) |= RF; /* switch register bank */
     //regfiles[1][LR] = getreg(PC);
@@ -303,7 +373,7 @@ void hexdumpw()
 {
 }
 
-void regdumpw(int y, int x)
+void regdumpw(int bank, int y, int x)
 {
   int i = 0;
 
@@ -321,7 +391,7 @@ void regdumpw(int y, int x)
 //	attron(COLOR_PAIR(1));
 
       mvprintw(y + i, x + j * 12, "%3s: %04x", 
-          regname_cstr(k), getreg(k));
+          regname_cstr(k), *rawreg(k, bank));
       //fclose(fbuf);
 
 //      if(getreg(k) != prev_getreg(k))
@@ -418,14 +488,14 @@ void refresh_curses(struct inst inst)
       }
       printw("      ");
       switch(inst.op){
-        case OP_SW:
-          printw("store %04x at %04x", 
-              getreg(inst.ra), getreg(inst.rb));
-          break;
-        case OP_LW:
-          printw("load %04x from %04x", 
-              getreg(inst.ra), getreg(inst.rb));
-          break;
+        //case OP_SW:
+        //  printw("store %04x at %04x", 
+        //      getreg(inst.ra), getreg(inst.rb));
+        //  break;
+        //case OP_LW:
+        //  printw("load %04x from %04x", 
+        //      getreg(inst.ra), getreg(inst.rb));
+        //  break;
         case OP_BEQ:
           if(reg_cmp(inst.rb, inst.rc))
             printw("branch to %04x", getreg(inst.ra));
@@ -434,12 +504,13 @@ void refresh_curses(struct inst inst)
     if(--inst_ring_idx < 0) inst_ring_idx = RING_SIZE - 1;
 
 #endif
-    regdumpw(y + h + 2, x + w + 2);
+    regdumpw(0, y + h + 2, x + w + 2);
     for(int i = 0; i < NUM_R; ++i) {
       prev_regfile[i] = getreg(i);
     }
+    regdumpw(1, y + h + 7, x + w + 2);
     //memcpy(prev_regfile, regfile, NUM_R * sizeof(u16));
-    memdumpw(y + h + 13, x + w + 2);
+    memdumpw(y + h + 16, x + w + 2);
   } while(0);
   refresh();
 }
@@ -580,18 +651,18 @@ int main(int argc, char **argv)
       case OP_NAND:
         write_reg(inst.ra, ~(getreg(inst.rb) & getreg(inst.rc)));
         break;
-      case OP_SW:
-        /* FIXME: rc ignored */
-        store(getreg(inst.rb), getreg(inst.ra));
-        setreg(inst.rb, getreg(inst.rb) + (int16_t)getreg(inst.rc));
-        if(inst.rb == SP && _g.trace) printio(inst.rb);
-        break;
-      case OP_LW:
-        /* FIXME: rc ignored */
-        write_reg(inst.ra, load(getreg(inst.rb)));
-        setreg(inst.rb, getreg(inst.rb) + (int16_t)getreg(inst.rc));
-        if(inst.rb == SP && _g.trace) printio(inst.rb);
-        break;
+      //case OP_SW:
+      //  /* FIXME: rc ignored */
+      //  store(getreg(inst.rb), getreg(inst.ra));
+      //  setreg(inst.rb, getreg(inst.rb) + (int16_t)getreg(inst.rc));
+      //  if(inst.rb == SP && _g.trace) printio(inst.rb);
+      //  break;
+      //case OP_LW:
+      //  /* FIXME: rc ignored */
+      //  write_reg(inst.ra, load(getreg(inst.rb)));
+      //  setreg(inst.rb, getreg(inst.rb) + (int16_t)getreg(inst.rc));
+      //  if(inst.rb == SP && _g.trace) printio(inst.rb);
+      //  break;
       case OP_ORI:
         write_reg(inst.ra, getreg(inst.ra) | inst.imm);
         break;
@@ -608,9 +679,30 @@ int main(int argc, char **argv)
         if(reg_cmp(inst.rb, inst.rc))
           write_reg(PC, getreg(inst.ra));
         break;
-      case OP_FREG:
-        write_reg(inst.ra, *rawreg(inst.rb, !regbank()));
+      case OP_FMOV:
+        /* TODO: Trace won't work here */
+        if(inst.rc) {
+          *rawreg(inst.ra, !regbank()) = *rawreg(inst.rb, regbank());
+        } else {
+          *rawreg(inst.ra, regbank()) = *rawreg(inst.rb, !regbank());
+        }
         break;
+
+      case OP_XM:
+        switch(inst.rc) {
+          case XM_LOAD_WORD:
+            write_reg(inst.ra, load(getreg(inst.rb)));
+            break;
+          case XM_STORE_WORD:
+            store(getreg(inst.rb), getreg(inst.ra));
+            break;
+          case XM_LOAD_BYTE:
+            break;
+          case XM_STORE_BYTE:
+            break;
+          default:
+            hard_crash();
+        }
       case OP_STMR:
         if(inst.ra <= inst.rb) {
           for(int i = inst.ra; i <= inst.rb; ++i) {
