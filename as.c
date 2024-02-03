@@ -90,11 +90,14 @@ struct troll16_sym *sym_find(char *str, troll16_size_t len)
 
     while(lkp < end) {
       char *name = arena_at(strtab_arena, lkp->name);
-      int lkp_len = strlen(name);
-      // printf("CMP %d '%.*s' '%s' %d\n", len, len, str, name, lkp_len);
+      printf("name %s\n", name);
+      if(name) {
+        int lkp_len = strlen(name);
+        // printf("CMP %d '%.*s' '%s' %d\n", len, len, str, name, lkp_len);
 
-      if(lkp_len == len && !memcmp(str, name, len))
-        return lkp;
+        if(lkp_len == len && !memcmp(str, name, len))
+          return lkp;
+      }
 
       lkp++;
     }
@@ -130,7 +133,7 @@ struct troll16_sym *sym_get(char *str, troll16_size_t len)
   if(!ret)
     ret = sym_alloc(str, len, 0);
 
-  //printf("%s %.*s %s %p\n", __func__, len, str, ret);
+  printf("%s %.*s %s %p\n", __func__, len, str, ret);
   return ret;
 }
 
@@ -651,7 +654,7 @@ int get_reglist(struct arg *arg, char *buf, int len)
   int toklen = 1;
   int orig_len = len;
 
-  printf("%s:%d\n", __func__, __LINE__);
+  printf("%s:%d %s\n", __func__, __LINE__, buf);
   if(len < 2 || *buf != '{')
     return -1;
 
@@ -823,6 +826,17 @@ int get_id(char *buf, int len)
   }
   return orig_len - len;
 }
+
+char *get_id2(char *s)
+{
+  if(isdigit(*s))
+    return s;
+  while(*s != '\0' && 
+        (isalnum(*s) || isdigit(*s) || *s == '_' || *s == '.'))
+    s++;
+  return s;
+}
+
 
 int get_label(struct arg *arg, char *buf, int len) 
 {
@@ -1054,6 +1068,205 @@ out:
 #endif
   //print_arg(arg);
   return 0;
+}
+
+char* getnum2(char *s, struct arg *arg)
+{
+  char *e = s;
+  char *ne;
+  if(!(*e == '-' || isdigit(*e)))
+    return s;
+
+  /* TODO: need my own function for this */
+  errno = 0;
+  long value = strtol(s, &ne , 0);
+  if(errno != 0 || ne == NULL)
+    fail("Invalid immediate value");
+
+  if(value > 0) {
+    assert(value >= INT16_MIN);
+    arg->value = (uint16_t)(int16_t)value;
+    //printf("ARG %04x\n", arg->value);
+  } else {
+    assert(value <= UINT16_MAX);
+    arg->value = (uint16_t)value;
+  }
+  arg->type = ARG_IMM;
+  return ne;
+}
+
+
+char* getreg2(char *s, struct arg *arg)
+{
+  int len;
+  char *e = s;
+
+  while(isalnum(*e)) {
+    e++;
+    if(e-s > 3)
+      return s;
+  }
+  len = e-s;
+  if(len < 2)
+    return s;
+
+  /*  */ if(len == 2 && s[0] == 's' && s[1] == 'p') {
+    arg->value = SP;
+  } else if(len == 2 && s[0] == 'l' && s[1] == 'r') {
+    arg->value = LR;
+  } else if(len == 2 && s[0] == 'p' && s[1] == 'c') {
+    arg->value = PC;
+  } else if(len == 2 && s[0] == 'z' && s[1] == 'r') {
+    arg->value = ZR;
+  } else if(len == 2 && s[0] == 'f' && s[1] == 'r') {
+    arg->value = FR;
+  } else if(len == 2 && s[0] == 'x' && s[1] == 'r') {
+    arg->value = XR;
+  } else if(s[0] == 'r') {
+    if(!isdigit(s[1]))
+      return s;
+    if(e-s == 2) {
+      arg->value = (s[1] - '0');
+    } else {
+      if(!isdigit(s[2]))
+        return s;
+      arg->value = 10 * (s[1] - '0') + (s[2] - '0');
+    }
+    if(arg->value >= NUM_R) 
+      fail("Invalid register number");
+  } else {
+    return s;
+  }
+  printf("VALID REGISTER %.*s\n", e-s,s);
+  arg->type = ARG_REG;
+  return e;
+}
+
+char* getreglist2(char *s, struct arg *arg) 
+{
+  printf("%s:%d %s\n", __func__, __LINE__, s);
+
+  int comma;
+  char *e, *r;
+
+  e = s;
+  if(*e != '{')
+    return e;
+  e++;
+  arg->reglist_len = 0;
+  struct arg reg, altreg;
+  comma = 1;
+  while(1) {
+    memset(&reg, 0, sizeof(reg));
+    while(isspace(*e))
+      e++;
+    r = getreg2(e, &reg);
+    if(r == e)
+      break;
+    if(!comma)
+      fail("NO comma between args");
+    comma = 0;
+    e = r;
+    if(*e == '-') {
+      e++;
+      r = getreg2(e, &altreg);
+      if(r == e)
+        fail("Invalid reglist");
+      e = r;
+      int lo = reg.value, hi = altreg.value;
+      if(lo <= hi){
+        for(int i = lo; i <= hi; ++i)
+          arg->reglist[arg->reglist_len++] = i;
+      } else {
+        for(int i = lo; i >= hi; --i)
+          arg->reglist[arg->reglist_len++] = i;
+      }
+    } else {
+      arg->reglist[arg->reglist_len++] = reg.value;
+    }
+    while(isspace(*e))
+      e++;
+    if(*e == ',') {
+      comma = 1;
+      e++;
+    }
+  }
+  arg->type = ARG_REGLIST;
+  return e;
+}
+
+
+char* do_get_label(char *s)
+{
+  if(isdigit(*s))
+    return s;
+  while(*s != '\0' && (isalnum(*s) || *s == '_'))
+    s++;
+  return s;
+}
+
+char* getlab2(char *s, struct arg *arg) 
+{
+  int type = ARG_LABEL;
+  char *e;
+
+  if(*s == '@') {
+    s++;
+    type = ARG_AT_LABEL;
+  }
+  e = do_get_label(s);
+  if(e==s)
+    return s;
+  arg->sym = sym_get(s, e-s);
+  arg->type = type;
+  return e;
+}
+
+char* getstr2(char *s, struct arg *arg) 
+{
+  char *str;
+  char *e;
+  e = s;
+  if(*e != '"')
+    return s;
+  e++;
+  str = strs[stridx];
+  /* FIXME! */
+  while(*e != '\0' && *e != '"')
+    e++;
+  if(*e != '"')
+    fail("Invalid string");
+  e++;
+  str = strs[stridx++];
+  arg->type = ARG_STR;
+  arg->value = stridx;
+  memcpy(&strs[stridx], s + 1, e - s - 1);
+  strs[stridx][e-s] = '\0';
+  printf("%s\n", strs[stridx]);
+  stridx++;
+  return e;
+}
+
+
+char *getarg2(char *s, struct arg *arg)
+{
+  char *e;
+  e = getstr2(s, arg);
+  if(e != s)
+    return e;
+  e = getreg2(s, arg);
+  if(e != s)
+    return e;
+  e = getreglist2(s, arg);
+  if(e != s)
+    return e;
+  e = getnum2(s, arg);
+  if(e != s)
+    return e;
+  e = getlab2(s, arg);
+  if(e != s)
+    return e;
+  return s;
 }
 
 
@@ -1636,9 +1849,10 @@ void parse_line3(
   if(toklen && toklen < len && buf[toklen] == ':') {
     struct troll16_sym *sym = sym_get(buf, toklen);
 
-    if(sym->flags & TROLL_SYM_F_DEFINED)
+    if(sym->flags & TROLL_SYM_F_DEFINED) {
       PARSE_FAIL(parser, buf, toklen,
           "Label '%.*s' redefined", toklen, buf);
+    }
 
     sym->flags |= TROLL_SYM_F_DEFINED;
     sym->value = offset;
@@ -1686,10 +1900,74 @@ void parse_line3(
     if(buf[0] == '#') 
       return;
 
-    PARSE_FAIL(parser, buf, len,
-        "Tailing characters");
+    PARSE_FAIL(parser, buf, len, "Trailing characters");
   }
 }
+
+void parse_line4(struct parser *parser, char *line)
+{
+  int comma;
+  char *s,*e;
+  struct inst_desc *desc;
+  struct arg arg = {};
+  struct inst inst = {};
+  struct as as = {};
+
+  s = line;
+  while(isspace(*s))
+    s++;
+  if(*s == '#')
+    return;
+
+  e = get_id2(s);
+  if(s != e && *e == ':') {
+    struct troll16_sym *sym = sym_get(s, e - s);
+    if(sym->flags & TROLL_SYM_F_DEFINED)
+      fail( "Symbol redefined\n");
+    sym->flags |= TROLL_SYM_F_DEFINED;
+    sym->value = offset;
+    s = e;
+  }
+
+  while(isspace(*s))
+    s++;
+  if(*s == '#')
+    return;
+
+  e = get_id2(s);
+  if(s != e) {
+    desc = opcode(s, e - s);
+    if(!desc)
+      fail("Unknown opcode");
+    s = e;
+  
+    comma = 1;
+    for(int i = 0; i < MAX_ARG; ++i) {
+      while(isspace(*s))
+        s++;
+      if(*s == '#')
+        break;
+      e = getarg2(s, &as.args[i]);
+      if(e == s)
+        break;
+      printf("ARG %.*s type %d\n", e-s,s,as.args[i].type);
+      s = e;
+      if(!comma)
+        fail("NO comma between args");
+      comma = 0;
+      while(isspace(*s))
+        s++;
+      if(*s == ',') {
+        comma = 1;
+        s++;
+      }
+    }
+    as.desc = desc;
+    do_emit_inst(desc, as.a + 0, as.a + 1, as.a + 2, NULL);
+  }
+}
+
+
 
 int ok(const char * filename)
 {
@@ -1729,11 +2007,14 @@ int ok(const char * filename)
 
       if(i < sz) {
         assert(filebuf[i] == '\n');
+        filebuf[i] = '\0';
         i += 1;
         parser.line = line;
         parser.line_len = i - (line - filebuf);
         parser.line_no++;
-        parse_line3(&parser, line, i - (line - filebuf));
+        printf("LINE: %s\n", line);
+        parse_line4(&parser, line);
+        //parse_line3(&parser, line, i - (line - filebuf));
         line = filebuf + i;
         continue;
       }
@@ -1753,11 +2034,13 @@ int main(int argc, char **argv)
 {
   int opt;
   int output_fd = -1;
+  printf("lol\n");
 
   while((opt = getopt(argc, argv, "o:")) != -1) {
+    printf("%c\n", opt);
     switch(opt) {
     case 'o':
-      output_fd = open(optarg, O_WRONLY | O_TRUNC | O_CREAT);
+      output_fd = open(optarg, O_WRONLY | O_TRUNC | O_CREAT, 0666);
       if(output_fd < 0)
         fail("Failed to open the output file");
       break;
