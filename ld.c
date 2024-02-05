@@ -1,9 +1,7 @@
-
 #include "arch.h"
 #include "troll.h"
 #include "arena.h"
 #include <unistd.h>
-
 
 struct arena *arena = NULL;
 
@@ -48,8 +46,10 @@ int open_object(const char *filename)
     arena = new_arena(1024);
 
   int fd = open(filename, O_RDONLY);
-  if(fd < 0)
+  if(fd < 0) {
+    printf("open %s %d\n", filename, fd);
     return -1;
+  }
 
   struct object *obj = arena_alloc(arena, sizeof(struct object));
   if(!objects)
@@ -187,6 +187,7 @@ struct troll16_sym *find_sym(const char *symname, struct object **symobj)
     while(sym < sym_end) {
       assert(sym->name < obj->strtab_sect->size);
       const char *lkp_symname = (void*)(obj->strtab_sect->data + sym->name);
+      printf("%d %d %s\n", sym->name, obj->strtab_sect->size, lkp_symname);
       if((sym->flags & TROLL_SYM_F_DEFINED) && !strcmp(symname, lkp_symname)) {
         printf("found sym %s in %s name=%d size=%d\n", 
              lkp_symname, obj->filename, sym->name, obj->strtab_sect->size);
@@ -295,7 +296,9 @@ int main(int argc, char **argv)
   while((opt = getopt(argc, argv, "o:")) != -1) {
     switch(opt) {
     case 'o':
-      output_fd = open(optarg, O_WRONLY | O_TRUNC | O_CREAT);
+      output_fd = open(optarg, O_WRONLY | O_TRUNC | O_CREAT, 0666);
+
+      printf("open %s %d\n", optarg, output_fd);
       if(output_fd < 0)
         fail("Failed to open the output file");
       break;

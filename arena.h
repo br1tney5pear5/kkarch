@@ -101,7 +101,9 @@ void *arena_at(struct arena *arena, size_t off)
 int arena_offsetof(struct arena *arena, void *of) 
 {
   int off = 0;
+  printf("ARENA %p\n", arena);
   while(arena) {
+    printf("%s %p-%p %p\n", __func__, arena->data, arena->data + arena->off, of);
     if(arena->data <= (char*)of && (char*)of < (arena->data + arena->off))
       return off + ((char*)of - arena->data);
 

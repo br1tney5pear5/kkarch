@@ -21,6 +21,12 @@ static struct {
 
 } _g = {0};
 
+struct rect {
+  int x, y, w, h;
+} screen_rect;
+
+
+
 int writeout_idx = 0;
 char writeout_buf[1024] = {0};
 const char *status = "";
@@ -434,12 +440,20 @@ void refresh_curses(struct inst inst)
   clear();
   int maxlines = LINES - 1;
   int maxcols = COLS - 1;
+
+  screen_rect.x = 0;
+  screen_rect.y = 0;
+  screen_rect.w = COLS - 1;
+  screen_rect.h = LINES - 1;
+
   //for(int i = 0; i < maxlines && i < maxcols; ++i) {
   //  mvaddch(i, i, '0');
   //}
   
   mvprintw(0,2, "intr %s %d %04x", status, intrnum, _load(KBINTR));
+  mvprintw(0,50, "%d/%d", maxlines, maxcols);
 
+#if 1
   do {
     int x = 2, y = 2;
     int h = 25, w = 80;
@@ -448,8 +462,7 @@ void refresh_curses(struct inst inst)
     mvprintw(y + 4, x + 4, writeout_buf);
     char strbuf[512];
 
-
-#if 1
+#if 0
     inst_ring[inst_ring_idx].inst = inst;
     inst_ring[inst_ring_idx].pc = getreg(PC);
     inst_ring_cnt++;
@@ -507,11 +520,11 @@ void refresh_curses(struct inst inst)
 
 #endif
 #if 1
-    regdumpw(0, y + h + 2, x + w + 2);
+    regdumpw(0, y + 1, x + w + 2);
     for(int i = 0; i < NUM_R; ++i) {
       prev_regfile[i] = getreg(i);
     }
-    regdumpw(1, y + h + 7, x + w + 2);
+    regdumpw(1, y + 7, x + w + 2);
 //  move(y + 5, x);
 //  printw("ZF=%d ", !!(getreg(FR) & ZF));
 //  printw("IEF=%d ", !!(getreg(FR) & IEF));
@@ -522,6 +535,7 @@ void refresh_curses(struct inst inst)
     memdumpw(y + h + 16, x + w + 2);
 #endif
   } while(0);
+#endif
   refresh();
 }
 

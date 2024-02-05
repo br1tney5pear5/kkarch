@@ -68,8 +68,10 @@ char *strtab_find(const char *str, troll16_size_t len)
 
 char *strtab_alloc(const char *str, troll16_size_t len)
 {
-  if(!strtab_arena)
+  if(!strtab_arena) {
     strtab_arena = new_arena(ARENA_SIZE);
+    assert(strtab_arena);
+  }
 
   char *buf = arena_alloc(strtab_arena, len + 1);
   assert(buf);
@@ -112,11 +114,18 @@ struct troll16_sym *sym_alloc(
 {
   if(!symtab_arena)
     symtab_arena = new_arena(ARENA_SIZE);
+  /* This lazy evaluates in strtab_alloc */
+  if(!strtab_arena)
+    strtab_arena = new_arena(ARENA_SIZE);
 
   struct troll16_sym *sym = 
     arena_alloc(symtab_arena, sizeof(struct troll16_sym));
 
-  sym->name = arena_offsetof(strtab_arena, strtab_alloc(str, len));
+  int ret = arena_offsetof(strtab_arena, strtab_alloc(str, len));
+  if(ret < 0)
+    fail("WTF");
+
+  sym->name = ret; 
   sym->value = value;
 
   printf("sym_alloc str='%.*s' name=%d value=%d\n", 
@@ -1236,13 +1245,14 @@ char* getstr2(char *s, struct arg *arg)
     e++;
   if(*e != '"')
     fail("Invalid string");
-  e++;
+  s++;
   str = strs[stridx++];
   arg->type = ARG_STR;
   arg->value = stridx;
-  memcpy(&strs[stridx], s + 1, e - s - 1);
+  memcpy(&strs[stridx], s, e-s);
   strs[stridx][e-s] = '\0';
   printf("%s\n", strs[stridx]);
+  e++;
   stridx++;
   return e;
 }
